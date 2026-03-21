@@ -53,12 +53,10 @@ def create_app():
     app.register_blueprint(ops_bp)
 
     # --- DB初期化 ---
-   with app.app_context():
-    from sqlalchemy import inspect
-    inspector = inspect(db.engine)
-    if not inspector.has_table("families"):
+   # app.py 修正案
+    with app.app_context():
+        # checkfirst=True (デフォルト) ですが、明示的に context 内で実行
         db.create_all()
-    _seed_demo_users()
 
     return app
 
