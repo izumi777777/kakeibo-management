@@ -14,3 +14,7 @@ static/uploads/*
 # Pythonのキャッシュ
 __pycache__/
 *.pyc
+
+firebase-key.json
+venv/
+移行元DB/
