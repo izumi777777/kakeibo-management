@@ -54,9 +54,12 @@ def create_app():
 
     # --- DB初期化 ---
    # app.py 修正案
-    with app.app_context():
-        # checkfirst=True (デフォルト) ですが、明示的に context 内で実行
+   with app.app_context():
+    from sqlalchemy import inspect
+    inspector = inspect(db.engine)
+    if not inspector.has_table("families"):
         db.create_all()
+    _seed_demo_users()
 
     return app
 
