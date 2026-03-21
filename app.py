@@ -69,33 +69,42 @@ def _seed_demo_users():
     """デモユーザーを作成（本番ではFirestore管理に切り替え）"""
     from models import User, Family
     from werkzeug.security import generate_password_hash
+    # 必要に応じて、app.py内のdbインスタンスを使用するようにインポートを調整してください
+    # from app import db 
 
-    # 家族グループがなければ作成
-    family = Family.query.first()
-    if not family:
-        family = Family(name="田中家")
-        db.session.add(family)
-        db.session.flush()
+    try:
+        # 家族グループがなければ作成
+        family = Family.query.first()
+        if not family:
+            family = Family(name="田中家")
+            db.session.add(family)
+            db.session.flush() # IDを確定させるために実行
 
-    # デモユーザー
-    demo_users = [
-        {"username": "taro", "display_name": "太郎（夫）", "email": "taro@example.com", "password": "demo1234"},
-        {"username": "hanako", "display_name": "花子（妻）", "email": "hanako@example.com", "password": "demo1234"},
-    ]
-    for u in demo_users:
-        if not User.query.filter_by(username=u["username"]).first():
-            user = User(
-                username=u["username"],
-                display_name=u["display_name"],
-                email=u["email"],
-                password_hash=generate_password_hash(u["password"]),
-                family_id=family.id
-            )
-            db.session.add(user)
-    db.session.commit()
+        # デモユーザーの定義
+        demo_users = [
+            {"username": "taro", "display_name": "太郎（夫）", "email": "taro@example.com", "password": "demo1234"},
+            {"username": "hanako", "display_name": "花子（妻）", "email": "hanako@example.com", "password": "demo1234"},
+        ]
 
+        for u in demo_users:
+            # ユーザーが既に存在するか確認
+            if not User.query.filter_by(username=u["username"]).first():
+                user = User(
+                    username=u["username"],
+                    display_name=u["display_name"],
+                    email=u["email"],
+                    password_hash=generate_password_hash(u["password"]),
+                    family_id=family.id
+                )
+                db.session.add(user)
+        
+        db.session.commit()
+        print("Demo users seeded successfully.")
 
-app = create_app()
+    except Exception as e:
+        # テーブルがまだ作成されていない場合や、競合が発生した場合のクラッシュを防止
+        db.session.rollback()
+        print(f"Database table not ready yet, skipping seed: {e}")
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
