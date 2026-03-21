@@ -106,5 +106,7 @@ def _seed_demo_users():
         db.session.rollback()
         print(f"Database table not ready yet, skipping seed: {e}")
 
+app = create_app()  # 関数の外、グローバルに配置します
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
