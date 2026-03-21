@@ -53,13 +53,13 @@ def create_app():
     app.register_blueprint(ops_bp)
 
     # --- DB初期化 ---
-   # app.py 修正案
-   with app.app_context():
-    from sqlalchemy import inspect
-    inspector = inspect(db.engine)
-    if not inspector.has_table("families"):
-        db.create_all()
-    _seed_demo_users()
+    # app.py 修正案
+    with app.app_context():
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        if not inspector.has_table("families"):
+            db.create_all()
+        _seed_demo_users()
 
     return app
 
