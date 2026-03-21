@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+{% block title %}運用手順メモ{% endblock %}
+{% block page_title %}📓 運用手順メモ{% endblock %}
+
+{% block head %}
+<style>
+  .memo-card {
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    transition: box-shadow .15s;
+  }
+  .memo-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+  .memo-title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: #1e293b;
+  }
+  .memo-content {
+    white-space: pre-wrap;
+    font-size: .875rem;
+    color: #475569;
+    line-height: 1.75;
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+  .memo-meta { font-size: .72rem; color: #94a3b8; }
+  /* 編集エリア */
+  .edit-area { display: none; }
+  .view-area { display: block; }
+  .memo-card.editing .edit-area  { display: block; }
+  .memo-card.editing .view-area  { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- 新規追加フォーム -->
+<div class="card mb-4" style="border:2px dashed #c7d2fe;background:#f8f7ff;">
+  <div class="card-body p-3">
+    <div class="fw-semibold mb-2" style="color:#4338ca;">
+      <i class="bi bi-plus-circle-fill me-1"></i>新しいメモを追加
+    </div>
+    <form action="{{ url_for('ops.add') }}" method="POST">
+      <div class="mb-2">
+        <input type="text" name="title" class="form-control form-control-sm"
+               placeholder="タイトル（例：📅 給料日にやること）" required>
+      </div>
+      <div class="mb-2">
+        <textarea name="content" class="form-control form-control-sm"
+                  rows="4" placeholder="内容を入力…（改行そのまま保存されます）" required></textarea>
+      </div>
+      <div class="text-end">
+        <button type="submit" class="btn btn-primary btn-sm px-4">
+          <i class="bi bi-plus-lg me-1"></i>追加
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- メモ一覧 -->
+{% if memos %}
+  <div class="row g-3" id="memo-list">
+    {% for memo in memos %}
+    <div class="col-12 col-lg-6" id="memo-wrap-{{ memo.id }}">
+      <div class="memo-card p-3" id="memo-card-{{ memo.id }}">
+
+        <!-- 表示モード -->
+        <div class="view-area">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <div class="memo-title">{{ memo.title }}</div>
+            <div class="d-flex gap-1 flex-shrink-0 ms-2">
+              <button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                      onclick="startEdit({{ memo.id }})" title="編集">
+                <i class="bi bi-pencil" style="font-size:.75rem;"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger py-0 px-2"
+                      onclick="deleteMemo({{ memo.id }})" title="削除">
+                <i class="bi bi-trash3" style="font-size:.75rem;"></i>
+              </button>
+            </div>
+          </div>
+          <div class="memo-content" id="content-view-{{ memo.id }}">{{ memo.content }}</div>
+          <div class="memo-meta mt-2">
+            {{ memo.user.display_name }} ・
+            {{ memo.updated_at.strftime('%Y/%m/%d %H:%M') if memo.updated_at else memo.created_at.strftime('%Y/%m/%d %H:%M') }}
+            に更新
+          </div>
+        </div>
+
+        <!-- 編集モード -->
+        <div class="edit-area">
+          <div class="mb-2">
+            <input type="text" class="form-control form-control-sm"
+                   id="edit-title-{{ memo.id }}"
+                   value="{{ memo.title }}">
+          </div>
+          <div class="mb-2">
+            <textarea class="form-control form-control-sm"
+                      id="edit-content-{{ memo.id }}"
+                      rows="8">{{ memo.content }}</textarea>
+          </div>
+          <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-sm btn-light" onclick="cancelEdit({{ memo.id }})">
+              キャンセル
+            </button>
+            <button class="btn btn-sm btn-primary px-3" onclick="saveEdit({{ memo.id }})">
+              <i class="bi bi-check-lg me-1"></i>保存
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-journal-text fs-1 d-block mb-2 opacity-25"></i>
+    メモがありません。上のフォームから追加してください。
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function startEdit(id) {
+  document.getElementById(`memo-card-${id}`).classList.add('editing');
+}
+
+function cancelEdit(id) {
+  document.getElementById(`memo-card-${id}`).classList.remove('editing');
+}
+
+async function saveEdit(id) {
+  const title   = document.getElementById(`edit-title-${id}`).value.trim();
+  const content = document.getElementById(`edit-content-${id}`).value.trim();
+  if (!title || !content) { alert('タイトルと内容を入力してください。'); return; }
+
+  const form = new FormData();
+  form.append('title', title);
+  form.append('content', content);
+
+  const res  = await fetch(`/ops/edit/${id}`, { method: 'POST', body: form });
+  const data = await res.json();
+  if (data.success) {
+    // 表示を更新してビューモードに戻す
+    document.getElementById(`memo-card-${id}`)
+            .querySelector('.memo-title').textContent = title;
+    document.getElementById(`content-view-${id}`).textContent = content;
+    cancelEdit(id);
+  } else {
+    alert('保存に失敗しました: ' + data.message);
+  }
+}
+
+async function deleteMemo(id) {
+  if (!confirm('このメモを削除しますか？')) return;
+  const res  = await fetch(`/ops/delete/${id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.success) {
+    const el = document.getElementById(`memo-wrap-${id}`);
+    el.style.transition = 'opacity .3s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 300);
+  }
+}
+</script>
+{% endblock %}

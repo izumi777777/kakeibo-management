@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}家計簿アプリ{% endblock %} | おうち家計簿</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --bg: #f8fafc;
+      --card-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04);
+    }
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: var(--bg);
+      color: #1e293b;
+      min-height: 100vh;
+    }
+    /* Sidebar */
+    .sidebar {
+      width: 240px;
+      min-height: 100vh;
+      background: linear-gradient(160deg, #1e1b4b 0%, #312e81 100%);
+      position: fixed;
+      top: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+      transition: transform .3s;
+    }
+    .sidebar-brand {
+      padding: 1.5rem 1.25rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,.1);
+    }
+    .sidebar-brand h5 {
+      color: #fff;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0;
+    }
+    .sidebar-brand small {
+      color: #a5b4fc;
+      font-size: .75rem;
+    }
+    .sidebar-nav { flex: 1; padding: .75rem 0; }
+    .nav-link-item {
+      display: flex;
+      align-items: center;
+      gap: .7rem;
+      padding: .65rem 1.25rem;
+      color: #c7d2fe;
+      text-decoration: none;
+      font-size: .9rem;
+      border-radius: 0;
+      transition: all .15s;
+      border-left: 3px solid transparent;
+    }
+    .nav-link-item:hover, .nav-link-item.active {
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      border-left-color: #818cf8;
+    }
+    .nav-link-item i { font-size: 1.05rem; width: 1.2rem; }
+    .sidebar-user {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(255,255,255,.1);
+      color: #c7d2fe;
+      font-size: .8rem;
+    }
+    .sidebar-user strong { color: #fff; display: block; margin-bottom: .2rem; }
+    /* Main content */
+    .main-content {
+      margin-left: 240px;
+      min-height: 100vh;
+    }
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: .75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .topbar-title { font-weight: 700; font-size: 1.05rem; color: #1e293b; }
+    .content-area { padding: 1.5rem; }
+    /* Cards */
+    .card { border: none; border-radius: 12px; box-shadow: var(--card-shadow); }
+    .card-header { background: #fff; border-bottom: 1px solid #f1f5f9; border-radius: 12px 12px 0 0 !important; }
+    /* Stat cards */
+    .stat-card {
+      border-radius: 12px;
+      padding: 1.25rem;
+      color: #fff;
+      box-shadow: var(--card-shadow);
+    }
+    .stat-card .label { font-size: .8rem; opacity: .85; }
+    .stat-card .value { font-size: 1.6rem; font-weight: 700; }
+    .stat-card .sub { font-size: .8rem; opacity: .75; }
+    /* Badges */
+    .type-badge {
+      display: inline-block;
+      padding: .2rem .6rem;
+      border-radius: 20px;
+      font-size: .75rem;
+      font-weight: 500;
+      color: #fff;
+    }
+    /* Amount display */
+    .amount-income { color: var(--success); font-weight: 600; }
+    .amount-expense { color: var(--danger); font-weight: 600; }
+    /* Flash messages */
+    .alert { border: none; border-radius: 10px; }
+    /* Mobile */
+    .menu-toggle { display: none; }
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .main-content { margin-left: 0; }
+      .menu-toggle { display: block; }
+    }
+    /* Markdown rendered */
+    .ai-content h2, .ai-content h3 { font-size: 1rem; margin-top: 1rem; }
+    .ai-content ul { padding-left: 1.2rem; }
+    .ai-content p { margin-bottom: .5rem; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <h5>🏠 おうち家計簿</h5>
+    <small>{{ current_user.family.name }}</small>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="{{ url_for('dashboard.index') }}" class="nav-link-item {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+      <i class="bi bi-speedometer2"></i> ダッシュボード
+    </a>
+    <a href="{{ url_for('cycle.index') }}" class="nav-link-item {% if request.blueprint == 'cycle' %}active{% endif %}">
+      <i class="bi bi-calendar-week"></i> 給料日サイクル管理
+    </a>
+    <a href="{{ url_for('transactions.index') }}" class="nav-link-item {% if request.blueprint == 'transactions' %}active{% endif %}">
+      <i class="bi bi-arrow-left-right"></i> 収支一覧
+    </a>
+    <a href="{{ url_for('ai.index') }}" class="nav-link-item {% if request.blueprint == 'ai' %}active{% endif %}">
+      <i class="bi bi-robot"></i> AIアドバイス
+    </a>
+    <a href="{{ url_for('memo.index') }}" class="nav-link-item {% if request.blueprint == 'memo' %}active{% endif %}">
+      <i class="bi bi-journal-text"></i> メモ・買い物リスト
+    </a>
+    <a href="{{ url_for('ops.index') }}" class="nav-link-item {% if request.blueprint == 'ops' %}active{% endif %}">
+      <i class="bi bi-book-fill"></i> 運用手順メモ
+    </a>
+    <hr style="border-color:rgba(255,255,255,.1); margin:.5rem 1rem;">
+    <a href="{{ url_for('admin.index') }}" class="nav-link-item {% if request.blueprint == 'admin' %}active{% endif %}">
+      <i class="bi bi-gear-fill"></i> アカウント管理
+    </a>
+    <a href="{{ url_for('auth.logout') }}" class="nav-link-item">
+      <i class="bi bi-box-arrow-right"></i> ログアウト
+    </a>
+  </nav>
+  <div class="sidebar-user">
+    <strong>{{ current_user.display_name }}</strong>
+    {{ current_user.email }}
+  </div>
+</aside>
+
+<!-- Overlay for mobile -->
+<div id="overlay" onclick="toggleSidebar()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;"></div>
+
+<!-- Main -->
+<div class="main-content">
+  <div class="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button class="btn btn-sm btn-outline-secondary menu-toggle" onclick="toggleSidebar()">
+        <i class="bi bi-list"></i>
+      </button>
+      <span class="topbar-title">{% block page_title %}{% endblock %}</span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <!-- Quick Add Button -->
+      <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#quickAddModal">
+        <i class="bi bi-plus-lg"></i> 記録する
+      </button>
+      <span class="d-none d-md-inline text-muted" style="font-size:.8rem;">
+        <i class="bi bi-people-fill"></i> {{ current_user.display_name }}
+      </span>
+    </div>
+  </div>
+
+  <div class="content-area">
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<!-- Quick Add Modal -->
+<div class="modal fade" id="quickAddModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;border:none;">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold">💰 収支を記録する</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('transactions.add') }}" method="POST">
+        <div class="modal-body">
+          <!-- タブ -->
+          <ul class="nav nav-pills nav-fill mb-3" id="addTabs">
+            <li class="nav-item">
+              <button class="nav-link active" type="button" onclick="setIncome(false)">💸 支出</button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" type="button" onclick="setIncome(true)">💴 収入</button>
+            </li>
+          </ul>
+
+          <input type="hidden" name="transaction_type" id="tx_type" value="food">
+
+          <!-- 支出カテゴリ -->
+          <div id="expense_cats" class="mb-3">
+            <label class="form-label fw-semibold">カテゴリ</label>
+            <div class="d-flex flex-wrap gap-2">
+              {% set cats = [
+                ('fixed','🏠固定費'),('food','🍱食費'),('daily','🛍日用品'),
+                ('entertainment','🎉娯楽'),('medical','💊医療'),('education','📚教育'),('other','📦その他')
+              ] %}
+              {% for val, label in cats %}
+              <button type="button" class="btn btn-sm {% if val == 'food' %}btn-primary{% else %}btn-outline-secondary{% endif %} cat-btn"
+                      data-val="{{ val }}" onclick="selectCat(this,'{{ val }}')">{{ label }}</button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- 収入タイプ -->
+          <div id="income_cats" class="mb-3" style="display:none;">
+            <label class="form-label fw-semibold">収入の種類</label>
+            <div class="d-flex flex-wrap gap-2">
+              <button type="button" class="btn btn-sm btn-success" onclick="selectCat(this,'income')">💴 給料・収入</button>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">金額（円）</label>
+            <div class="input-group">
+              <span class="input-group-text">¥</span>
+              <input type="number" name="amount" class="form-control form-control-lg" 
+                     placeholder="0" min="1" required autofocus>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">メモ（任意）</label>
+            <input type="text" name="description" class="form-control" placeholder="例：スーパー、ガス代">
+          </div>
+
+          <div class="mb-1">
+            <label class="form-label fw-semibold">日付</label>
+            <input type="date" name="transaction_date" class="form-control" 
+                   value="{{ date.today().strftime('%Y-%m-%d') if date is defined else '' }}" id="tx_date">
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">キャンセル</button>
+          <button type="submit" class="btn btn-primary px-4">記録する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // Set today's date
+  const dateInput = document.getElementById('tx_date');
+  if (dateInput && !dateInput.value) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+
+  function toggleSidebar() {
+    const s = document.getElementById('sidebar');
+    const o = document.getElementById('overlay');
+    s.classList.toggle('open');
+    o.style.display = s.classList.contains('open') ? 'block' : 'none';
+  }
+
+  let isIncomeMode = false;
+  function setIncome(v) {
+    isIncomeMode = v;
+    document.getElementById('expense_cats').style.display = v ? 'none' : '';
+    document.getElementById('income_cats').style.display = v ? '' : 'none';
+    document.querySelectorAll('#addTabs .nav-link').forEach((el, i) => {
+      el.classList.toggle('active', (i === 1) === v);
+    });
+    if (v) document.getElementById('tx_type').value = 'income';
+    else {
+      const active = document.querySelector('.cat-btn.btn-primary');
+      if (active) document.getElementById('tx_type').value = active.dataset.val;
+    }
+  }
+
+  function selectCat(btn, val) {
+    document.querySelectorAll('.cat-btn').forEach(b => {
+      b.classList.remove('btn-primary');
+      b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-primary');
+    document.getElementById('tx_type').value = val;
+  }
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

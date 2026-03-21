@@ -1,0 +1,547 @@
+{% extends 'base.html' %}
+{% block title %}給料日サイクル管理{% endblock %}
+{% block page_title %}📅 給料日サイクル管理{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.forecast-hero {
+  background: linear-gradient(135deg,#1e1b4b 0%,#4338ca 60%,#6366f1 100%);
+  border-radius:16px; color:#fff; padding:1.5rem;
+}
+.balance-big { font-size:2.4rem; font-weight:800; letter-spacing:-1px; line-height:1; }
+.daily-pill {
+  display:inline-block; background:rgba(255,255,255,.15);
+  border-radius:20px; padding:.3rem 1rem; font-size:.85rem;
+}
+.section-label {
+  font-size:.72rem; font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:#94a3b8; margin-bottom:.5rem;
+}
+.planned-row { border-radius:10px; background:#f8fafc; border:1px solid #e2e8f0; transition:.1s; }
+.planned-row:hover { border-color:#c7d2fe; }
+.planned-row.done { opacity:.45; }
+.flow-box {
+  border-radius:10px; padding:.75rem 1rem; font-size:.88rem;
+}
+.flow-arrow { color:#94a3b8; font-size:1.2rem; text-align:center; line-height:2; }
+.budget-bar { height:8px; border-radius:4px; }
+.edit-form { display:none; background:#f1f5f9; border-radius:8px; padding:.75rem; margin-top:.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- サイクルナビ -->
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <a href="{{ url_for('cycle.index', cycle_start=prev_cycle_start) }}"
+     class="btn btn-outline-secondary btn-sm px-3"><i class="bi bi-chevron-left"></i></a>
+  <div class="text-center">
+    <div class="fw-bold">{{ s.cycle_start.strftime('%Y/%m/%d') }} 〜 {{ s.cycle_end.strftime('%Y/%m/%d') }}</div>
+    <div class="text-muted" style="font-size:.75rem;">給料日サイクル（毎月{{ payday }}日）</div>
+  </div>
+  <a href="{{ url_for('cycle.index', cycle_start=next_cycle_start) }}"
+     class="btn btn-outline-secondary btn-sm px-3 {% if not can_go_next %}disabled opacity-25{% endif %}">
+    <i class="bi bi-chevron-right"></i></a>
+</div>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     ① ヒーローカード：全体サマリー
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="forecast-hero mb-4">
+  <div class="row g-3 align-items-center">
+    <!-- 残高 -->
+    <div class="col-md-4 text-center text-md-start">
+      <div style="font-size:.78rem;opacity:.75;margin-bottom:.2rem;">
+        給料日まで残り <strong>{{ s.days_remaining }}日</strong>
+      </div>
+      <div class="balance-big">¥{{ '{:,}'.format(s.forecast_balance) }}</div>
+      <div style="font-size:.82rem;opacity:.75;margin-top:.3rem;">予測残高（予定支出込み）</div>
+      <div class="mt-2">
+        <span class="daily-pill">💡 1日あたり ¥{{ '{:,}'.format(s.daily_budget) }}</span>
+      </div>
+    </div>
+    <!-- 中央：収支フロー -->
+    <div class="col-md-4">
+      <div class="d-flex flex-column gap-1" style="font-size:.82rem;">
+        <div class="flow-box" style="background:rgba(16,185,129,.25);border:1px solid rgba(16,185,129,.4);">
+          <span style="opacity:.8;">💴 収入（確定）</span>
+          <span class="float-end fw-bold">¥{{ '{:,}'.format(s.actual_income) }}</span>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-box" style="background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.35);">
+          <span style="opacity:.8;">💸 支出（確定）</span>
+          <span class="float-end fw-bold">－¥{{ '{:,}'.format(s.actual_expense) }}</span>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-box" style="background:rgba(245,158,11,.2);border:1px solid rgba(245,158,11,.4);">
+          <span style="opacity:.8;">📋 予定支出（未払い）</span>
+          <span class="float-end fw-bold text-warning">－¥{{ '{:,}'.format(s.planned_total) }}</span>
+        </div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-box" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);">
+          <span style="opacity:.8;">✅ 予測残高</span>
+          <span class="float-end fw-bold">¥{{ '{:,}'.format(s.forecast_balance) }}</span>
+        </div>
+      </div>
+    </div>
+    <!-- 右：進捗 -->
+    <div class="col-md-4">
+      <div style="font-size:.78rem;opacity:.75;" class="mb-1">
+        サイクル進捗 {{ s.days_elapsed }}日 / {{ s.days_total }}日
+      </div>
+      <div class="progress mb-3" style="height:6px;">
+        <div class="progress-bar bg-white" style="width:{{ s.progress_pct }}%;opacity:.6;"></div>
+      </div>
+      <!-- 支出ペース -->
+      {% if s.actual_income > 0 %}
+      {% set expense_rate = (s.actual_expense / s.actual_income * 100)|int %}
+      <div style="font-size:.78rem;opacity:.75;" class="mb-1">
+        収入に対する支出率（確定）
+      </div>
+      <div class="progress mb-3" style="height:6px;">
+        <div class="progress-bar {% if expense_rate > 80 %}bg-danger{% elif expense_rate > 60 %}bg-warning{% else %}bg-success{% endif %}"
+             style="width:{{ [expense_rate,100]|min }}%;"></div>
+      </div>
+      <div style="font-size:.8rem;opacity:.8;">
+        {{ expense_rate }}% 使用（収入 ¥{{ '{:,}'.format(s.actual_income) }}）
+      </div>
+      {% endif %}
+
+      <!-- 予定支出の済み率 -->
+      {% if s.planned_all > 0 %}
+      {% set done_rate = (s.planned_done / s.planned_all * 100)|int %}
+      <div style="font-size:.78rem;opacity:.75;" class="mb-1 mt-2">予定支出 支払済み率</div>
+      <div class="progress" style="height:6px;">
+        <div class="progress-bar bg-info" style="width:{{ done_rate }}%;"></div>
+      </div>
+      <div style="font-size:.78rem;opacity:.8;margin-top:.2rem;">
+        {{ done_rate }}%（¥{{ '{:,}'.format(s.planned_done) }} / ¥{{ '{:,}'.format(s.planned_all) }}）
+      </div>
+      {% endif %}
+
+      {% if s.forecast_balance < 0 %}
+      <div class="mt-2 p-2 rounded" style="background:rgba(239,68,68,.25);font-size:.78rem;">
+        ⚠️ 予定支出込みで赤字の見込みです
+      </div>
+      {% elif s.daily_budget < 2000 %}
+      <div class="mt-2 p-2 rounded" style="background:rgba(245,158,11,.2);font-size:.78rem;">
+        🔔 1日あたり予算が少なめです
+      </div>
+      {% else %}
+      <div class="mt-2 p-2 rounded" style="background:rgba(16,185,129,.2);font-size:.78rem;">
+        ✅ 問題なし。計画通りです！
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       ② 予定支出リスト（編集・削除付き）
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+        <span class="fw-semibold">📋 予定支出
+          <span class="badge bg-secondary ms-1" style="font-size:.7rem;">
+            {{ s.planned_list|length }}件
+          </span>
+        </span>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addPlannedModal">
+          <i class="bi bi-plus-lg"></i> 追加
+        </button>
+      </div>
+      <div class="card-body p-2">
+        {% if s.planned_list %}
+          {% for pe in s.planned_list %}
+          <div class="planned-row p-2 mb-2 {% if pe.is_done %}done{% endif %}" id="pe-{{ pe.id }}">
+            <!-- 表示行 -->
+            <div class="d-flex align-items-center gap-2">
+              <input type="checkbox" class="form-check-input flex-shrink-0"
+                     {% if pe.is_done %}checked{% endif %}
+                     onchange="togglePlanned({{ pe.id }}, this)"
+                     style="width:1.1rem;height:1.1rem;cursor:pointer;">
+              <div class="flex-grow-1 min-w-0">
+                <div class="d-flex align-items-center gap-1 flex-wrap">
+                  <span class="badge rounded-pill" style="background:{{ pe.type_color }};font-size:.68rem;">
+                    {{ pe.type_label }}
+                  </span>
+                  {% if pe.is_recurring %}
+                  <span class="badge bg-light text-muted border" style="font-size:.65rem;">🔁毎月</span>
+                  {% endif %}
+                </div>
+                <div class="fw-medium" style="font-size:.88rem;" id="pe-desc-{{ pe.id }}">
+                  {{ pe.description }}
+                </div>
+                <div class="text-muted" style="font-size:.7rem;">
+                  {% if pe.planned_date %}{{ pe.planned_date.strftime('%m/%d') }} 予定・{% endif %}
+                  {{ pe.user.display_name }}
+                </div>
+              </div>
+              <div class="text-end flex-shrink-0">
+                <div class="fw-bold {% if pe.is_done %}text-muted{% else %}text-danger{% endif %}"
+                     style="font-size:.9rem;" id="pe-amt-{{ pe.id }}">
+                  ¥{{ '{:,}'.format(pe.amount) }}
+                </div>
+                <div class="d-flex gap-1 justify-content-end mt-1">
+                  <button class="btn btn-link btn-sm p-0 text-primary" style="font-size:.72rem;"
+                          onclick="openEditPlanned({{ pe.id }})">
+                    <i class="bi bi-pencil"></i> 編集
+                  </button>
+                  <button class="btn btn-link btn-sm p-0 text-danger" style="font-size:.72rem;"
+                          onclick="deletePlanned({{ pe.id }})">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- インライン編集フォーム -->
+            <div class="edit-form" id="edit-form-{{ pe.id }}">
+              <div class="row g-2">
+                <div class="col-12">
+                  <input type="text" class="form-control form-control-sm"
+                         id="ef-desc-{{ pe.id }}" value="{{ pe.description }}" placeholder="名前">
+                </div>
+                <div class="col-6">
+                  <input type="number" class="form-control form-control-sm"
+                         id="ef-amt-{{ pe.id }}" value="{{ pe.amount }}" placeholder="金額">
+                </div>
+                <div class="col-6">
+                  <input type="date" class="form-control form-control-sm"
+                         id="ef-date-{{ pe.id }}"
+                         value="{{ pe.planned_date.strftime('%Y-%m-%d') if pe.planned_date else '' }}">
+                </div>
+                <div class="col-12">
+                  <select class="form-select form-select-sm" id="ef-type-{{ pe.id }}">
+                    {% for k,v in type_labels.items() %}
+                    {% if k != 'income' %}
+                    <option value="{{ k }}" {% if pe.transaction_type == k %}selected{% endif %}>{{ v }}</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12 d-flex gap-2 justify-content-end">
+                  <label class="d-flex align-items-center gap-1" style="font-size:.78rem;cursor:pointer;">
+                    <input type="checkbox" id="ef-recur-{{ pe.id }}"
+                           {% if pe.is_recurring %}checked{% endif %}> 毎月繰り返す
+                  </label>
+                  <button class="btn btn-sm btn-light py-0" onclick="closeEditPlanned({{ pe.id }})">
+                    キャンセル
+                  </button>
+                  <button class="btn btn-sm btn-primary py-0" onclick="saveEditPlanned({{ pe.id }})">
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+
+          <div class="d-flex justify-content-between px-1 pt-1" style="font-size:.8rem;color:#64748b;">
+            <span>未払い合計</span>
+            <span class="fw-bold text-danger">¥{{ '{:,}'.format(s.planned_total) }}</span>
+          </div>
+          <div class="d-flex justify-content-between px-1" style="font-size:.8rem;color:#94a3b8;">
+            <span>支払済み</span>
+            <span>¥{{ '{:,}'.format(s.planned_done) }}</span>
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-4" style="font-size:.85rem;">
+            <i class="bi bi-calendar-plus fs-2 d-block mb-2 opacity-25"></i>
+            「追加」から予定支出を入力してください<br>
+            <small class="text-muted">家賃・光熱費・保険など</small>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- AIアドバイスリンク -->
+    <div class="card mt-3" style="background:linear-gradient(135deg,#1e1b4b,#4338ca);color:#fff;">
+      <div class="card-body py-3 text-center">
+        <div class="fs-3 mb-1">🤖</div>
+        <div class="fw-bold mb-1" style="font-size:.95rem;">このサイクルをAIに分析してもらう</div>
+        <div style="font-size:.78rem;opacity:.8;margin-bottom:.9rem;">
+          予定支出・実績・残高を踏まえたアドバイスを生成
+        </div>
+        <a href="{{ url_for('ai.index', cycle_start=s.cycle_start.strftime('%Y-%m-%d')) }}"
+           class="btn btn-light btn-sm fw-semibold px-4">
+          AIアドバイスを見る →
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       ③ カテゴリ別 実績＋予定 vs 予算
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+        <span class="fw-semibold">📊 カテゴリ別 支出全体像</span>
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#budgetModal">
+          <i class="bi bi-pencil"></i> 予算編集
+        </button>
+      </div>
+      <div class="card-body p-3">
+        {% if s.breakdown %}
+          <!-- 凡例 -->
+          <div class="d-flex gap-3 mb-3" style="font-size:.72rem;color:#64748b;">
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#ef4444;"></span> 確定支出</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fbbf24;opacity:.6;"></span> 予定支出（未払い）</span>
+            <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e2e8f0;"></span> 予算残り</span>
+          </div>
+          {% for b in s.breakdown %}
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-end mb-1">
+              <span style="font-size:.85rem;font-weight:600;">
+                <span style="color:{{ b.color }};">●</span> {{ b.label }}
+              </span>
+              <div class="text-end" style="font-size:.78rem;">
+                <span class="text-danger fw-semibold">¥{{ '{:,}'.format(b.actual) }}</span>
+                {% if b.planned > 0 %}
+                <span class="text-warning"> + ¥{{ '{:,}'.format(b.planned) }}</span>
+                {% endif %}
+                {% if b.budget > 0 %}
+                <span class="text-muted"> / ¥{{ '{:,}'.format(b.budget) }}</span>
+                {% endif %}
+              </div>
+            </div>
+            {% if b.budget > 0 %}
+              {% set actual_w = [b.actual / b.budget * 100, 100]|min|int %}
+              {% set planned_w = [b.planned / b.budget * 100, 100 - actual_w]|min|int %}
+              <div class="progress" style="height:10px;border-radius:5px;background:#f1f5f9;">
+                <div class="progress-bar"
+                     style="width:{{ actual_w }}%;background:{% if b.pct and b.pct >= 100 %}#ef4444{% elif b.pct and b.pct >= 80 %}#f59e0b{% else %}#10b981{% endif %};border-radius:5px 0 0 5px;"></div>
+                <div class="progress-bar"
+                     style="width:{{ planned_w }}%;background:#fbbf24;opacity:.55;border-radius:0;"></div>
+              </div>
+              <div class="d-flex justify-content-between mt-1" style="font-size:.7rem;color:#94a3b8;">
+                <span>合計 {{ b.pct }}% 使用見込み</span>
+                <span>
+                  {% if b.budget - b.total >= 0 %}
+                    残り ¥{{ '{:,}'.format(b.budget - b.total) }}
+                  {% else %}
+                    <span class="text-danger">¥{{ '{:,}'.format(b.total - b.budget) }} オーバー見込み</span>
+                  {% endif %}
+                </span>
+              </div>
+            {% else %}
+              <div class="progress" style="height:6px;border-radius:3px;">
+                <div class="progress-bar" style="width:100%;background:{{ b.color }};opacity:.2;"></div>
+              </div>
+              <div style="font-size:.7rem;color:#94a3b8;margin-top:.2rem;">予算未設定</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4" style="font-size:.85rem;">
+            収支・予定支出を入力するとここに表示されます
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 実績取引（直近10件） -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center py-2 px-3">
+        <span class="fw-semibold">💳 このサイクルの取引</span>
+        <a href="{{ url_for('transactions.index') }}" class="btn btn-sm btn-link p-0 text-primary">
+          全件表示 →
+        </a>
+      </div>
+      <div class="card-body p-0">
+        {% if s.actual_txs %}
+        <div class="list-group list-group-flush">
+          {% for tx in s.actual_txs[:10] %}
+          <div class="list-group-item px-3 py-2 d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge rounded-pill" style="background:{{ tx.type_color }};font-size:.68rem;">
+                {{ tx.type_label }}
+              </span>
+              <div>
+                <div style="font-size:.85rem;font-weight:500;">{{ tx.description or tx.type_label }}</div>
+                <div style="font-size:.7rem;color:#94a3b8;">
+                  {{ tx.transaction_date.strftime('%m/%d') }}
+                  ・{{ tx.user.display_name }}
+                </div>
+              </div>
+            </div>
+            <span style="font-size:.88rem;"
+                  class="fw-semibold {% if tx.is_income %}text-success{% else %}text-danger{% endif %}">
+              {{ '+' if tx.is_income else '-' }}¥{{ '{:,}'.format(tx.amount) }}
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+          <div class="text-center text-muted p-3" style="font-size:.82rem;">
+            このサイクルの取引はまだありません
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ 予定支出追加モーダル ━━━━ -->
+<div class="modal fade" id="addPlannedModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold">📋 予定支出を追加</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('cycle.add_planned') }}" method="POST">
+        <input type="hidden" name="cycle_start" value="{{ s.cycle_start.strftime('%Y-%m-%d') }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">名前</label>
+            <input type="text" name="description" class="form-control"
+                   placeholder="例：家賃、電気代、スマホ代" required autofocus>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">カテゴリ</label>
+            <div class="d-flex flex-wrap gap-2" id="planned_cats">
+              {% for val, label in [('fixed','🏠固定費'),('food','🍱食費'),('daily','🛍日用品'),
+                                    ('entertainment','🎉娯楽'),('medical','💊医療'),
+                                    ('education','📚教育'),('other','📦その他')] %}
+              <button type="button"
+                      class="btn btn-sm {% if val == 'fixed' %}btn-primary{% else %}btn-outline-secondary{% endif %} pcat-btn"
+                      data-val="{{ val }}" onclick="selectPcat(this,'{{ val }}')">{{ label }}</button>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="transaction_type" id="pcat_type" value="fixed">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">金額（円）</label>
+            <div class="input-group">
+              <span class="input-group-text">¥</span>
+              <input type="number" name="amount" class="form-control" placeholder="0" min="1" required>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">支払予定日（任意）</label>
+            <input type="date" name="planned_date" class="form-control">
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_recurring" value="1" id="recurCheck">
+            <label class="form-check-label" for="recurCheck" style="font-size:.88rem;">
+              🔁 毎月繰り返す（次のサイクルにも自動追加）
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">キャンセル</button>
+          <button type="submit" class="btn btn-primary px-4">追加する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ━━━━ 予算編集モーダル ━━━━ -->
+<div class="modal fade" id="budgetModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px;">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold">🎯 カテゴリ別予算を設定</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('cycle.save_budget') }}" method="POST">
+        <input type="hidden" name="cycle_start" value="{{ s.cycle_start.strftime('%Y-%m-%d') }}">
+        <div class="modal-body">
+          <p class="text-muted mb-3" style="font-size:.82rem;">
+            各カテゴリの上限予算を入力してください。<br>
+            棒グラフで確定支出＋予定支出の合計を予算と比較できます。
+          </p>
+          {% for type_key, label in [('fixed','🏠 固定費'),('food','🍱 食費'),('daily','🛍 日用品'),
+                                      ('entertainment','🎉 娯楽'),('medical','💊 医療'),
+                                      ('education','📚 教育'),('other','📦 その他')] %}
+          <div class="mb-2 d-flex align-items-center gap-2">
+            <label class="form-label mb-0 flex-shrink-0" style="width:90px;font-size:.85rem;">{{ label }}</label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">¥</span>
+              <input type="number" name="budget_{{ type_key }}" class="form-control"
+                     placeholder="0" value="{{ s.budget_map.get(type_key, '') or '' }}">
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">キャンセル</button>
+          <button type="submit" class="btn btn-primary px-4">保存する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// カテゴリ選択
+function selectPcat(btn, val) {
+  document.querySelectorAll('.pcat-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-secondary');
+  });
+  btn.classList.remove('btn-outline-secondary');
+  btn.classList.add('btn-primary');
+  document.getElementById('pcat_type').value = val;
+}
+
+// 支払済みトグル
+async function togglePlanned(id, cb) {
+  const res  = await fetch(`/cycle/planned/toggle/${id}`, { method:'POST' });
+  const data = await res.json();
+  if (data.success) {
+    const row = document.getElementById(`pe-${id}`);
+    data.is_done ? row.classList.add('done') : row.classList.remove('done');
+    setTimeout(() => location.reload(), 350);
+  }
+}
+
+// 編集フォームを開く
+function openEditPlanned(id) {
+  document.getElementById(`edit-form-${id}`).style.display = 'block';
+}
+function closeEditPlanned(id) {
+  document.getElementById(`edit-form-${id}`).style.display = 'none';
+}
+
+// 編集保存
+async function saveEditPlanned(id) {
+  const desc   = document.getElementById(`ef-desc-${id}`).value.trim();
+  const amt    = document.getElementById(`ef-amt-${id}`).value;
+  const date   = document.getElementById(`ef-date-${id}`).value;
+  const type   = document.getElementById(`ef-type-${id}`).value;
+  const recur  = document.getElementById(`ef-recur-${id}`).checked;
+
+  if (!desc || !amt) { alert('名前と金額を入力してください。'); return; }
+
+  const res = await fetch(`/cycle/planned/edit/${id}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ description:desc, amount:parseInt(amt),
+                           transaction_type:type, planned_date:date, is_recurring:recur })
+  });
+  const data = await res.json();
+  if (data.success) {
+    location.reload();
+  } else {
+    alert('保存エラー: ' + data.message);
+  }
+}
+
+// 削除
+async function deletePlanned(id) {
+  if (!confirm('この予定支出を削除しますか？')) return;
+  const res  = await fetch(`/cycle/planned/delete/${id}`, { method:'POST' });
+  const data = await res.json();
+  if (data.success) location.reload();
+}
+</script>
+{% endblock %}

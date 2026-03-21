@@ -1,0 +1,495 @@
+{% extends 'base.html' %}
+{% block title %}食品リストから買い物プランを作成{% endblock %}
+{% block page_title %}🛒 買い物プラン作成{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card text-center py-2">
+      <div class="card-body py-2">
+        <div class="text-muted small">今サイクルの食費予算</div>
+        <div id="budget-display">
+          <div class="fw-bold fs-5" id="budget-value">¥{{ '{:,}'.format(budget_status.food_budget) }}</div>
+          <button class="btn btn-link btn-sm p-0 mt-1" style="font-size:.75rem;"
+                  onclick="startEditBudget()">
+            <i class="bi bi-pencil"></i> 変更
+          </button>
+        </div>
+        <div id="budget-edit" style="display:none;">
+          <div class="input-group input-group-sm mt-1">
+            <span class="input-group-text">¥</span>
+            <input type="number" id="budget-input" class="form-control text-end"
+                   value="{{ budget_status.food_budget }}" min="1" max="9999999"
+                   onkeydown="if(event.key==='Enter') saveBudget()">
+            <button class="btn btn-primary" onclick="saveBudget()">保存</button>
+            <button class="btn btn-outline-secondary" onclick="cancelEditBudget()">×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center py-2">
+      <div class="card-body py-2">
+        <div class="text-muted small">使用済み</div>
+        <div class="fw-bold fs-5 text-danger">¥{{ '{:,}'.format(budget_status.food_spent) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center py-2">
+      <div class="card-body py-2">
+        <div class="text-muted small">残り予算</div>
+        <div class="fw-bold fs-5 {% if budget_status.food_remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
+          ¥{{ '{:,}'.format(budget_status.food_remaining) }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header py-2 px-3 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">📋 食品リスト（候補）</span>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <span class="text-muted small">
+            選択中: <span id="selected-count">0</span>件
+            （¥<span id="selected-total">0</span>）
+          </span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="selectAll()">全選択</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="clearAll()">解除</button>
+        </div>
+      </div>
+      <div class="card-body p-2" style="max-height:60vh;overflow-y:auto;">
+
+        <div class="d-flex flex-wrap gap-1 mb-3 px-1">
+          <button class="btn btn-sm btn-primary category-btn" onclick="filterCategory('all', this)">すべて</button>
+          {% for cat in categories %}
+          <button class="btn btn-sm btn-outline-secondary category-btn" onclick="filterCategory('{{ cat }}', this)">
+            {{ cat }}
+          </button>
+          {% endfor %}
+        </div>
+
+        <div class="d-flex px-2 mb-1 text-muted" style="font-size:.72rem;gap:8px;">
+          <div style="width:1rem;flex-shrink:0;"></div>
+          <div class="flex-grow-1">商品名</div>
+          <div style="min-width:72px;text-align:right;">単価（編集可）</div>
+          <div style="min-width:90px;text-align:center;">個数</div>
+          <div style="min-width:68px;text-align:right;">小計</div>
+        </div>
+
+        {% for cat in categories %}
+        <div class="category-section mb-3" data-category="{{ cat }}">
+          <div class="fw-semibold text-muted small px-2 mb-1 border-bottom pb-1">{{ cat }}</div>
+          {% for item in items_by_category[cat] %}
+          <div class="d-flex align-items-center gap-2 px-2 py-1 rounded food-item"
+               data-category="{{ cat }}"
+               data-id="{{ item.id }}"
+               data-default-price="{{ item.price_basia or item.price_kanesue or 0 }}"
+               data-default-qty="{{ item.quantity }}">
+
+            <input type="checkbox" class="form-check-input food-checkbox flex-shrink-0"
+                   style="width:1rem;height:1rem;cursor:pointer;"
+                   onchange="onCheckChange(this)"
+                   onclick="event.stopPropagation()">
+
+            <div class="flex-grow-1" style="cursor:pointer;min-width:0;"
+                 onclick="onRowClick(this.closest('.food-item'))">
+              <div class="item-name text-truncate" style="font-size:.88rem;">{{ item.name }}</div>
+              <div class="text-muted" style="font-size:.72rem;">{{ item.amount }}
+                {% if item.note %}
+                <span class="badge bg-warning text-dark ms-1" style="font-size:.62rem;">{{ item.note }}</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div class="flex-shrink-0" onclick="event.stopPropagation()" style="min-width:72px;">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text px-1" style="font-size:.78rem;">¥</span>
+                <input type="number"
+                       class="form-control form-control-sm text-end price-input"
+                       style="font-size:.82rem;padding:2px 4px;min-width:52px;"
+                       value="{{ item.price_basia or item.price_kanesue or 0 }}"
+                       min="0" max="99999"
+                       onchange="onPriceInput(this)"
+                       title="単価を変更できます">
+              </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-1 flex-shrink-0"
+                 onclick="event.stopPropagation()" style="min-width:90px;">
+              <button class="btn btn-sm btn-outline-secondary px-1 py-0"
+                      style="font-size:.8rem;line-height:1.4;min-width:22px;"
+                      onclick="changeQty(this.closest('.food-item'), -1)">−</button>
+              <input type="number"
+                     class="form-control form-control-sm text-center qty-input"
+                     style="width:40px;font-size:.82rem;padding:2px 4px;"
+                     value="{{ item.quantity }}" min="0" max="99"
+                     onchange="onQtyInput(this)"
+                     onclick="event.stopPropagation()">
+              <button class="btn btn-sm btn-outline-secondary px-1 py-0"
+                      style="font-size:.8rem;line-height:1.4;min-width:22px;"
+                      onclick="changeQty(this.closest('.food-item'), 1)">＋</button>
+            </div>
+
+            <div class="text-end flex-shrink-0 subtotal-label" style="min-width:68px;color:#6c757d;">
+              <div class="fw-semibold" style="font-size:.85rem;">
+                ¥<span class="subtotal">{{ '{:,}'.format((item.price_basia or item.price_kanesue or 0) * item.quantity) }}</span>
+              </div>
+              <div style="font-size:.7rem;">小計</div>
+            </div>
+
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card h-100">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">🤖 AIアドバイス</span>
+      </div>
+      <div class="card-body p-3 d-flex flex-column">
+        <div class="d-grid gap-2 mb-3">
+          <button class="btn btn-primary" onclick="getAdvice()" id="advice-btn">
+            <i class="bi bi-stars"></i> 選択リストでAIアドバイスを取得
+          </button>
+          <button class="btn btn-success" onclick="addToMemo()" id="add-btn">
+            <i class="bi bi-cart-plus"></i> 選択した商品を買い物メモに追加
+          </button>
+          <a href="{{ url_for('memo.index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> メモ一覧に戻る
+          </a>
+        </div>
+
+        <div id="advice-area" class="p-3 rounded"
+             style="background:#f8f9fa;border:1px solid #dee2e6;
+                    min-height:160px;font-size:.88rem;overflow-y:auto;">
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-stars fs-1 d-block mb-2 opacity-25"></i>
+            商品を選択して「AIアドバイスを取得」を押してください
+          </div>
+        </div>
+
+        <div id="chat-area" class="mt-3" style="display:none;">
+          <hr class="my-2">
+          <div class="fw-semibold mb-2" style="font-size:.88rem;">
+            <i class="bi bi-chat-dots me-1 text-primary"></i>AIに質問する
+          </div>
+          <div id="chat-history"
+               style="max-height:240px;overflow-y:auto;background:#f8fafc;
+                      border:1px solid #e2e8f0;border-radius:8px;
+                      padding:10px;display:flex;flex-direction:column;gap:8px;">
+          </div>
+          <div class="d-flex gap-2 mt-2">
+            <input type="text" id="chat-input" class="form-control form-control-sm"
+                   placeholder="例：予算内に収めるには何を減らす？"
+                   onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}">
+            <button class="btn btn-primary btn-sm flex-shrink-0" onclick="sendChat()" id="chat-send-btn">
+              <i class="bi bi-send"></i>
+            </button>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.7rem;">
+            Enterで送信 ／ 選択中の商品・予算状況を踏まえて回答します
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 選択中: { id(int) -> { price, qty } }
+const selectedItems = {};
+
+// ---- 食費予算編集 ----
+function startEditBudget() {
+  document.getElementById('budget-display').style.display = 'none';
+  document.getElementById('budget-edit').style.display   = '';
+  document.getElementById('budget-input').focus();
+}
+
+function cancelEditBudget() {
+  document.getElementById('budget-display').style.display = '';
+  document.getElementById('budget-edit').style.display   = 'none';
+}
+
+async function saveBudget() {
+  const amount = parseInt(document.getElementById('budget-input').value);
+  if (!amount || amount <= 0) { alert('正しい金額を入力してください'); return; }
+
+  const res  = await fetch('/memo/food-budget', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount }),
+  });
+  const data = await res.json();
+  if (data.success) {
+    document.getElementById('budget-value').textContent = '¥' + data.amount.toLocaleString('ja-JP');
+    cancelEditBudget();
+    // 残り予算も再計算して再読み込み
+    location.reload();
+  } else {
+    alert('保存失敗: ' + data.message);
+  }
+}
+
+// ---- 選択管理 ----
+function setSelected(el, selected) {
+  const id    = parseInt(el.dataset.id);
+  const cb    = el.querySelector('.food-checkbox');
+  const price = parseInt(el.querySelector('.price-input').value) || 0;
+  const qty   = parseInt(el.querySelector('.qty-input').value)   || 0;
+
+  if (selected && qty > 0) {
+    selectedItems[id] = { price, qty };
+    cb.checked        = true;
+    el.style.background = '#e8f5e9';
+  } else {
+    delete selectedItems[id];
+    cb.checked          = false;
+    el.style.background = '';
+  }
+  updateSubtotal(el);
+  updateCounter();
+}
+
+function onRowClick(el) {
+  const id = parseInt(el.dataset.id);
+  setSelected(el, !selectedItems.hasOwnProperty(id));
+}
+
+function onCheckChange(cb) {
+  setSelected(cb.closest('.food-item'), cb.checked);
+}
+
+// ★ 単価変更
+function onPriceInput(input) {
+  const el  = input.closest('.food-item');
+  const id  = parseInt(el.dataset.id);
+  const price = Math.max(0, parseInt(input.value) || 0);
+  input.value = price;
+
+  if (selectedItems.hasOwnProperty(id)) {
+    selectedItems[id].price = price;
+    updateSubtotal(el);
+    updateCounter();
+  }
+}
+
+function changeQty(el, delta) {
+  const input  = el.querySelector('.qty-input');
+  const newQty = Math.max(0, Math.min(99, (parseInt(input.value) || 0) + delta));
+  input.value  = newQty;
+  onQtyInput(input);
+}
+
+function onQtyInput(input) {
+  const el  = input.closest('.food-item');
+  const id  = parseInt(el.dataset.id);
+  const qty = Math.max(0, parseInt(input.value) || 0);
+  input.value = qty;
+
+  if (qty === 0) {
+    setSelected(el, false);
+  } else if (selectedItems.hasOwnProperty(id)) {
+    selectedItems[id].qty = qty;
+    updateSubtotal(el);
+    updateCounter();
+  }
+}
+
+function updateSubtotal(el) {
+  const price = parseInt(el.querySelector('.price-input').value) || 0;
+  const qty   = parseInt(el.querySelector('.qty-input').value)   || 0;
+  el.querySelector('.subtotal').textContent = (price * qty).toLocaleString('ja-JP');
+  el.querySelector('.subtotal-label').style.color =
+    selectedItems.hasOwnProperty(parseInt(el.dataset.id)) ? '#198754' : '#6c757d';
+}
+
+function updateCounter() {
+  let total = 0;
+  Object.values(selectedItems).forEach(v => { total += v.price * v.qty; });
+  document.getElementById('selected-count').textContent = Object.keys(selectedItems).length;
+  document.getElementById('selected-total').textContent = total.toLocaleString('ja-JP');
+}
+
+function selectAll() {
+  document.querySelectorAll('.food-item').forEach(el => {
+    const sec = el.closest('.category-section');
+    if (sec && sec.style.display === 'none') return;
+    setSelected(el, true);
+  });
+}
+
+function clearAll() {
+  document.querySelectorAll('.food-item').forEach(el => setSelected(el, false));
+}
+
+function filterCategory(cat, btn) {
+  document.querySelectorAll('.category-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-secondary');
+  });
+  btn.classList.add('btn-primary');
+  btn.classList.remove('btn-outline-secondary');
+  document.querySelectorAll('.category-section').forEach(sec => {
+    sec.style.display = (cat === 'all' || sec.dataset.category === cat) ? '' : 'none';
+  });
+}
+
+// APIペイロード（単価・個数ともにユーザー調整後の値）
+function buildPayload() {
+  return Object.entries(selectedItems).map(([id, v]) => ({
+    id: parseInt(id), price: v.price, quantity: v.qty
+  }));
+}
+
+// marked.js がなければ簡易パース
+const mdParse = typeof marked !== 'undefined' ? (s) => marked.parse(s) : (s) => s.replace(/\n/g,'<br>');
+
+// チャット履歴
+let chatMessages = [];
+
+async function getAdvice() {
+  if (Object.keys(selectedItems).length === 0) { alert('商品を選択してください'); return; }
+  const btn  = document.getElementById('advice-btn');
+  const area = document.getElementById('advice-area');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>分析中...';
+  area.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border text-primary mb-2"></div><br>AIが分析中です...</div>';
+
+  try {
+    const res  = await fetch('/memo/shopping-plan/advice', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected_items: buildPayload() }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      area.innerHTML = `
+        <div class="mb-2">
+          <span class="badge bg-success">合計見込み ¥${data.total.toLocaleString('ja-JP')}</span>
+          <span class="badge ${data.budget_status.food_remaining >= data.total ? 'bg-success' : 'bg-danger'} ms-1">
+            ${data.budget_status.food_remaining >= data.total ? '予算内 ✅' : '予算オーバー ⚠️'}
+          </span>
+        </div>
+        <hr class="my-2">
+        <div style="white-space:pre-wrap;">${data.advice}</div>`;
+
+      // チャットエリアを開く・履歴リセット
+      chatMessages = [{ role: 'assistant', content: data.advice }];
+      document.getElementById('chat-history').innerHTML = '';
+      document.getElementById('chat-area').style.display = '';
+    } else {
+      area.innerHTML = `<div class="text-danger">エラー: ${data.message}</div>`;
+    }
+  } catch(e) {
+    area.innerHTML = '<div class="text-danger">通信エラーが発生しました</div>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-stars"></i> 選択リストでAIアドバイスを取得';
+}
+
+// ---- チャット ----
+async function sendChat() {
+  const input    = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+
+  appendBubble('user', question);
+  chatMessages.push({ role: 'user', content: question });
+
+  const sendBtn = document.getElementById('chat-send-btn');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  const loadingId = 'loading-' + Date.now();
+  appendBubble('assistant', '<span class="spinner-border spinner-border-sm text-secondary"></span>', loadingId);
+
+  try {
+    const res  = await fetch('/memo/shopping-plan/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages:       chatMessages,
+        selected_items: buildPayload(),
+      }),
+    });
+    const data = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    if (data.success) {
+      appendBubble('assistant', data.answer);
+      chatMessages.push({ role: 'assistant', content: data.answer });
+    } else {
+      appendBubble('assistant', 'エラー: ' + data.message);
+    }
+  } catch(e) {
+    document.getElementById(loadingId)?.remove();
+    appendBubble('assistant', '通信エラーが発生しました');
+  }
+  sendBtn.disabled = false;
+  sendBtn.innerHTML = '<i class="bi bi-send"></i>';
+}
+
+function appendBubble(role, content, id) {
+  const history = document.getElementById('chat-history');
+  const isUser  = role === 'user';
+  const div     = document.createElement('div');
+  if (id) div.id = id;
+  div.style.cssText = `display:flex;justify-content:${isUser ? 'flex-end' : 'flex-start'};`;
+  div.innerHTML = `
+    <div style="max-width:85%;padding:7px 11px;font-size:.83rem;line-height:1.6;
+                border-radius:${isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};
+                background:${isUser ? '#6366f1' : '#fff'};
+                color:${isUser ? '#fff' : '#1e293b'};
+                border:${isUser ? 'none' : '1px solid #e2e8f0'};">
+      ${isUser ? escHtml(content) : mdParse(content)}
+    </div>`;
+  history.appendChild(div);
+  history.scrollTop = history.scrollHeight;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function addToMemo() {
+  if (Object.keys(selectedItems).length === 0) { alert('商品を選択してください'); return; }
+  const btn = document.getElementById('add-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>追加中...';
+
+  try {
+    const res  = await fetch('/memo/shopping-plan/add-to-memo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected_items: buildPayload() }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(`✅ ${data.added}件を買い物メモに追加しました`);
+      window.location.href = "{{ url_for('memo.index') }}";
+    }
+  } catch(e) {
+    alert('エラーが発生しました');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-cart-plus"></i> 選択した商品を買い物メモに追加';
+}
+</script>
+{% endblock %}

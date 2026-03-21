@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}アカウント管理{% endblock %}
+{% block page_title %}⚙️ アカウント管理{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+
+  <!-- ① 家族メンバー一覧 -->
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">👨‍👩‍👧 家族メンバー</span>
+        <span class="badge bg-secondary ms-2">{{ members | length }}人</span>
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for member in members %}
+          <div class="list-group-item px-3 py-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-3">
+                <!-- アバター -->
+                <div style="width:42px;height:42px;border-radius:50%;
+                            background:linear-gradient(135deg,#6366f1,#4338ca);
+                            display:flex;align-items:center;justify-content:center;
+                            color:#fff;font-weight:700;font-size:1rem;flex-shrink:0;">
+                  {{ member.display_name[0] }}
+                </div>
+                <div>
+                  <div class="fw-semibold">
+                    {{ member.display_name }}
+                    {% if member.id == current_user.id %}
+                      <span class="badge bg-primary ms-1" style="font-size:.65rem;">あなた</span>
+                    {% endif %}
+                  </div>
+                  <div class="text-muted" style="font-size:.78rem;">
+                    @{{ member.username }} &nbsp;|&nbsp; {{ member.email }}
+                  </div>
+                </div>
+              </div>
+              <!-- 削除ボタン（自分以外） -->
+              {% if member.id != current_user.id %}
+              <form action="{{ url_for('admin.delete_user', user_id=member.id) }}" method="POST"
+                    onsubmit="return confirm('「{{ member.display_name }}」を削除しますか？');">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 家族グループ名変更 -->
+    <div class="card mt-3">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">🏠 家族グループ名</span>
+      </div>
+      <div class="card-body">
+        <form action="{{ url_for('admin.update_family') }}" method="POST"
+              class="d-flex gap-2">
+          <input type="text" name="family_name" class="form-control"
+                 value="{{ family.name }}" required>
+          <button type="submit" class="btn btn-outline-primary flex-shrink-0">変更</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <!-- ② 新しいアカウントを追加 -->
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">➕ 新しいアカウントを追加</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.82rem;">
+          同じ家族グループのメンバーとしてアカウントを追加します。<br>
+          追加されたアカウントは同じ収支・メモを共有できます。
+        </p>
+        <form action="{{ url_for('admin.add_user') }}" method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">表示名</label>
+            <input type="text" name="display_name" class="form-control"
+                   placeholder="例：花子（妻）" required>
+            <div class="form-text">アプリ内で表示される名前</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">ユーザー名（ログインID）</label>
+            <input type="text" name="username" class="form-control"
+                   placeholder="例：hanako" required pattern="[a-zA-Z0-9_]+"
+                   title="英数字とアンダースコアのみ">
+            <div class="form-text">半角英数字。ログイン時に使用します</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">メールアドレス</label>
+            <input type="email" name="email" class="form-control"
+                   placeholder="hanako@example.com" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">パスワード</label>
+            <input type="password" name="password" class="form-control"
+                   placeholder="6文字以上" required minlength="6" id="pw1">
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">パスワード（確認）</label>
+            <input type="password" name="password2" class="form-control"
+                   placeholder="もう一度入力" required minlength="6" id="pw2">
+            <div id="pw_error" class="text-danger mt-1" style="font-size:.8rem;display:none;">
+              パスワードが一致しません
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100" id="addBtn">
+            <i class="bi bi-person-plus-fill me-1"></i> アカウントを作成する
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ③ 自分のパスワード変更 -->
+    <div class="card mt-3">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">🔑 パスワードを変更する</span>
+      </div>
+      <div class="card-body">
+        <form action="{{ url_for('admin.change_password') }}" method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">現在のパスワード</label>
+            <input type="password" name="current_password" class="form-control"
+                   placeholder="••••••••" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">新しいパスワード</label>
+            <input type="password" name="new_password" class="form-control"
+                   placeholder="6文字以上" required minlength="6">
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">新しいパスワード（確認）</label>
+            <input type="password" name="new_password2" class="form-control"
+                   placeholder="もう一度入力" required minlength="6">
+          </div>
+          <button type="submit" class="btn btn-outline-primary w-100">
+            <i class="bi bi-shield-lock me-1"></i> パスワードを変更する
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// パスワード一致チェック
+const pw1 = document.getElementById('pw1');
+const pw2 = document.getElementById('pw2');
+const err = document.getElementById('pw_error');
+const btn = document.getElementById('addBtn');
+
+function checkPw() {
+  if (pw2.value && pw1.value !== pw2.value) {
+    err.style.display = '';
+    btn.disabled = true;
+  } else {
+    err.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+pw1.addEventListener('input', checkPw);
+pw2.addEventListener('input', checkPw);
+</script>
+{% endblock %}

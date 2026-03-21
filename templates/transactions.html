@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{% block title %}収支一覧{% endblock %}
+{% block page_title %}💰 収支一覧{% endblock %}
+
+{% block content %}
+<!-- 月ナビ -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <a href="{{ url_for('transactions.index', year=prev_year, month=prev_month) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-chevron-left"></i>
+  </a>
+  <h5 class="mb-0 fw-bold">{{ current_year }}年 {{ current_month }}月</h5>
+  <a href="{{ url_for('transactions.index', year=next_year, month=next_month) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-chevron-right"></i>
+  </a>
+</div>
+
+<!-- フィルター -->
+<div class="d-flex gap-2 mb-3">
+  <a href="{{ url_for('transactions.index', year=current_year, month=current_month, filter='all') }}"
+     class="btn btn-sm {% if tx_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">全て</a>
+  <a href="{{ url_for('transactions.index', year=current_year, month=current_month, filter='income') }}"
+     class="btn btn-sm {% if tx_filter == 'income' %}btn-success{% else %}btn-outline-secondary{% endif %}">収入のみ</a>
+  <a href="{{ url_for('transactions.index', year=current_year, month=current_month, filter='expense') }}"
+     class="btn btn-sm {% if tx_filter == 'expense' %}btn-danger{% else %}btn-outline-secondary{% endif %}">支出のみ</a>
+</div>
+
+<!-- 月合計 -->
+{% if transactions %}
+{% set income_sum = transactions | selectattr('is_income') | map(attribute='amount') | sum %}
+{% set expense_sum = transactions | rejectattr('is_income') | map(attribute='amount') | sum %}
+<div class="row g-2 mb-3">
+  <div class="col-4">
+    <div class="card py-2 px-3 border-success border-1">
+      <div class="text-muted" style="font-size:.75rem;">収入合計</div>
+      <div class="fw-bold amount-income">¥{{ '{:,}'.format(income_sum) }}</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card py-2 px-3 border-danger border-1">
+      <div class="text-muted" style="font-size:.75rem;">支出合計</div>
+      <div class="fw-bold amount-expense">¥{{ '{:,}'.format(expense_sum) }}</div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card py-2 px-3">
+      <div class="text-muted" style="font-size:.75rem;">残高</div>
+      <div class="fw-bold {% if income_sum - expense_sum >= 0 %}amount-income{% else %}amount-expense{% endif %}">
+        ¥{{ '{:,}'.format(income_sum - expense_sum) }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 取引一覧 -->
+<div class="card">
+  <div class="card-body p-0">
+    {% if transactions %}
+    <div class="list-group list-group-flush">
+      {% for tx in transactions %}
+      <div class="list-group-item d-flex align-items-center justify-content-between px-3 py-2">
+        <div class="d-flex align-items-center gap-2 flex-grow-1 min-w-0">
+          <span class="type-badge flex-shrink-0" style="background:{{ tx.type_color }};">{{ tx.type_label }}</span>
+          <div class="min-w-0">
+            <div class="text-truncate fw-medium" style="font-size:.9rem;">
+              {{ tx.description or tx.type_label }}
+            </div>
+            <div style="font-size:.75rem; color:#94a3b8;">
+              {{ tx.transaction_date.strftime('%Y/%m/%d') }}
+              &nbsp;<i class="bi bi-person-fill"></i> {{ tx.user.display_name }}
+            </div>
+          </div>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-shrink-0 ms-2">
+          <span class="{% if tx.is_income %}amount-income{% else %}amount-expense{% endif %}">
+            {{ '+' if tx.is_income else '-' }}¥{{ '{:,}'.format(tx.amount) }}
+          </span>
+          <form action="{{ url_for('transactions.delete', tx_id=tx.id) }}" method="POST"
+                onsubmit="return confirm('この記録を削除しますか？');">
+            <button type="submit" class="btn btn-sm btn-link text-danger p-0 ms-1">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-5 text-center text-muted">
+      <i class="bi bi-inbox fs-1 d-block mb-2 opacity-25"></i>
+      この月の取引データがありません<br>
+      <small>右上の「記録する」から入力してください</small>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

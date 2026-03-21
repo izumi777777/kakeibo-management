@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}家族プロフィール設定{% endblock %}
+{% block page_title %}👨‍👩‍👧‍👦 家族プロフィール設定{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">AIプロンプトに固定する家族構成</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          ここに入力した内容は、AIアドバイス・買い物チャットのすべてのプロンプトに
+          自動で含まれます。家族構成・年齢・アレルギーなど自由に記入できます。
+        </p>
+
+        <form method="POST">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">家族プロフィール</label>
+            <textarea name="profile" class="form-control font-monospace"
+                      rows="8" placeholder="{{ default_profile }}">{{ current_profile }}</textarea>
+            <div class="text-muted mt-1" style="font-size:.75rem;">
+              例：アレルギー情報、食の好み、健康上の制限なども記入できます
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">保存</button>
+            <button type="button" class="btn btn-outline-secondary"
+                    onclick="document.querySelector('textarea').value = `{{ default_profile }}`">
+              デフォルトに戻す
+            </button>
+          </div>
+        </form>
+
+        <hr class="mt-4">
+        <div class="text-muted small">
+          <strong>現在AIに渡されているプロフィール：</strong>
+          <pre class="mt-2 p-2 rounded" style="background:#f8f9fa;font-size:.8rem;">{{ current_profile }}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

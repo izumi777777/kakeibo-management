@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% block title %}メモ・買い物リスト{% endblock %}
+{% block page_title %}📝 メモ・買い物リスト{% endblock %}
+
+{% block content %}
+
+{# ---- アイテム行マクロ（block内の先頭で定義） ---- #}
+{% macro render_item(item) %}
+<div class="d-flex align-items-center gap-2 py-1 border-bottom" id="item-{{ item.id }}">
+  <input type="checkbox" class="form-check-input flex-shrink-0"
+         {% if item.is_done %}checked{% endif %}
+         onchange="toggleMemo({{ item.id }}, this)"
+         style="width:1.1rem;height:1.1rem;cursor:pointer;">
+  <span class="flex-grow-1 {% if item.is_done %}text-decoration-line-through text-muted{% endif %}"
+        id="content-{{ item.id }}" style="font-size:.9rem;">
+    {{ item.content }}
+  </span>
+
+  <!-- ★ 金額（クリックで編集） -->
+  <span id="price-display-{{ item.id }}"
+        class="flex-shrink-0 text-success fw-semibold"
+        style="font-size:.82rem;cursor:pointer;min-width:60px;text-align:right;"
+        onclick="startPriceEdit({{ item.id }}, {{ item.price or 0 }})"
+        title="クリックで金額を編集">
+    {% if item.price %}¥{{ '{:,}'.format(item.price) }}{% else %}<span class="text-muted">¥--</span>{% endif %}
+  </span>
+  <div id="price-edit-{{ item.id }}" style="display:none;flex-shrink:0;">
+    <div class="input-group input-group-sm" style="width:110px;">
+      <span class="input-group-text px-1">¥</span>
+      <input type="number" class="form-control form-control-sm text-end"
+             id="price-input-{{ item.id }}"
+             style="font-size:.82rem;padding:2px 4px;"
+             min="0" max="99999"
+             onkeydown="if(event.key==='Enter') savePrice({{ item.id }}); if(event.key==='Escape') cancelPriceEdit({{ item.id }});"
+             onblur="savePrice({{ item.id }})">
+    </div>
+  </div>
+
+  <small class="text-muted flex-shrink-0" style="font-size:.7rem;">{{ item.user.display_name }}</small>
+  <button class="btn btn-sm btn-link text-danger p-0 flex-shrink-0"
+          onclick="deleteMemo({{ item.id }})">
+    <i class="bi bi-x-lg"></i>
+  </button>
+</div>
+{% endmacro %}
+
+<!-- 週タブ -->
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  {% for w, label in week_labels.items() %}
+  <a href="{{ url_for('memo.index', week=w) }}"
+     class="btn btn-sm {% if w == selected_week %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+    {% if w == current_week %}<i class="bi bi-star-fill me-1 text-warning" style="font-size:.7rem;"></i>{% endif %}
+    {{ label }}
+    {% if w == selected_week and undone_price > 0 %}
+    <span class="badge bg-warning text-dark ms-1">¥{{ '{:,}'.format(undone_price) }}</span>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+<!-- 週の予算・合計サマリー -->
+<div class="row g-2 mb-3">
+  <div class="col-4">
+    <div class="card text-center py-1">
+      <div class="card-body py-1">
+        <div class="text-muted" style="font-size:.72rem;">今週の食費予算</div>
+        <div class="fw-bold text-primary">¥{{ '{:,}'.format(week_budgets[selected_week]) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card text-center py-1">
+      <div class="card-body py-1">
+        <div class="text-muted" style="font-size:.72rem;">リスト合計</div>
+        <div class="fw-bold">¥{{ '{:,}'.format(total_price) }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-4">
+    <div class="card text-center py-1">
+      <div class="card-body py-1">
+        <div class="text-muted" style="font-size:.72rem;">購入済み</div>
+        <div class="fw-bold text-success">¥{{ '{:,}'.format(done_price) }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- 買い物リスト -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header py-2 px-3 d-flex justify-content-between align-items-center">
+        <div>
+          <span class="fw-semibold">🛒 買い物リスト</span>
+          <span class="badge bg-secondary ms-2">{{ shopping_all | rejectattr('is_done') | list | length }}件未購入</span>
+        </div>
+        <a href="{{ url_for('memo.shopping_plan') }}" class="btn btn-sm btn-outline-success">
+          <i class="bi bi-basket2"></i> 食品リストから追加
+        </a>
+      </div>
+      <div class="card-body p-3">
+
+        <!-- 手動追加フォーム -->
+        <form action="{{ url_for('memo.add') }}" method="POST" class="mb-3">
+          <input type="hidden" name="memo_type" value="shopping">
+          <input type="hidden" name="week" value="{{ selected_week }}">
+          <div class="d-flex gap-2 mb-2">
+            <input type="text" name="content" class="form-control form-control-sm"
+                   placeholder="例：牛乳、トイレットペーパー" required>
+            <button type="submit" class="btn btn-primary btn-sm flex-shrink-0">追加</button>
+          </div>
+          <div class="d-flex gap-2">
+            <select name="item_category" class="form-select form-select-sm" style="max-width:120px;">
+              <option value="food">🥦 食品</option>
+              <option value="daily">🧴 日用品</option>
+              <option value="other">📦 その他</option>
+            </select>
+            <input type="number" name="price" class="form-control form-control-sm"
+                   placeholder="金額（任意）" min="0" style="max-width:130px;">
+          </div>
+        </form>
+
+        <!-- 食品セクション -->
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-semibold small text-success">🥦 食品
+              <span class="badge bg-secondary ms-1">{{ food_list | rejectattr('is_done') | list | length }}</span>
+            </span>
+            {% set food_total = namespace(val=0) %}
+            {% for m in food_list %}{% set food_total.val = food_total.val + m.price %}{% endfor %}
+            {% if food_total.val > 0 %}
+            <span class="text-muted small">¥{{ '{:,}'.format(food_total.val) }}</span>
+            {% endif %}
+          </div>
+          {% if food_list %}
+            {% for item in food_list %}{{ render_item(item) }}{% endfor %}
+          {% else %}
+            <div class="text-muted small ps-2 py-1">食品はありません</div>
+          {% endif %}
+        </div>
+
+        <!-- 日用品セクション -->
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-semibold small text-info">🧴 日用品
+              <span class="badge bg-secondary ms-1">{{ daily_list | rejectattr('is_done') | list | length }}</span>
+            </span>
+            {% set daily_total = namespace(val=0) %}
+            {% for m in daily_list %}{% set daily_total.val = daily_total.val + m.price %}{% endfor %}
+            {% if daily_total.val > 0 %}
+            <span class="text-muted small">¥{{ '{:,}'.format(daily_total.val) }}</span>
+            {% endif %}
+          </div>
+          {% if daily_list %}
+            {% for item in daily_list %}{{ render_item(item) }}{% endfor %}
+          {% else %}
+            <div class="text-muted small ps-2 py-1">日用品はありません</div>
+          {% endif %}
+        </div>
+
+        <!-- その他セクション -->
+        {% if other_list %}
+        <div class="mb-1">
+          <div class="fw-semibold small text-secondary mb-1">📦 その他</div>
+          {% for item in other_list %}{{ render_item(item) }}{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not shopping_all %}
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-cart3 fs-1 d-block mb-2 opacity-25"></i>
+          この週の買い物リストが空です
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </div>
+
+  <!-- メモ -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">📒 共有メモ</span>
+      </div>
+      <div class="card-body p-3">
+        <form action="{{ url_for('memo.add') }}" method="POST" class="d-flex gap-2 mb-3">
+          <input type="hidden" name="memo_type" value="note">
+          <input type="text" name="content" class="form-control" placeholder="例：今月の予算目標など" required>
+          <button type="submit" class="btn btn-secondary flex-shrink-0">追加</button>
+        </form>
+        {% if notes %}
+          {% for note in notes %}
+          <div class="card mb-2" style="background:#fffbeb;border:1px solid #fef08a;">
+            <div class="card-body py-2 px-3">
+              <div class="d-flex justify-content-between align-items-start">
+                <div style="font-size:.9rem;">{{ note.content }}</div>
+                <button class="btn btn-sm btn-link text-danger p-0 ms-2 flex-shrink-0"
+                        onclick="deleteMemo({{ note.id }})">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </div>
+              <div class="text-muted mt-1" style="font-size:.72rem;">
+                {{ note.user.display_name }} ・ {{ note.created_at.strftime('%m/%d %H:%M') }}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-journal-text fs-1 d-block mb-2 opacity-25"></i>
+            メモがありません
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function toggleMemo(id, checkbox) {
+  const res  = await fetch(`/memo/toggle/${id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.success) {
+    const content = document.getElementById(`content-${id}`);
+    if (data.is_done) {
+      content.classList.add('text-decoration-line-through', 'text-muted');
+    } else {
+      content.classList.remove('text-decoration-line-through', 'text-muted');
+    }
+  }
+}
+
+async function deleteMemo(id) {
+  if (!confirm('削除しますか？')) return;
+  const res  = await fetch(`/memo/delete/${id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.success) {
+    const el = document.getElementById(`item-${id}`);
+    if (el) el.remove();
+    else location.reload();
+  }
+}
+
+// ---- 金額インライン編集 ----
+function startPriceEdit(id, currentPrice) {
+  document.getElementById(`price-display-${id}`).style.display = 'none';
+  const editEl = document.getElementById(`price-edit-${id}`);
+  editEl.style.display = '';
+  const input = document.getElementById(`price-input-${id}`);
+  input.value = currentPrice || '';
+  input.focus();
+  input.select();
+}
+
+function cancelPriceEdit(id) {
+  document.getElementById(`price-display-${id}`).style.display = '';
+  document.getElementById(`price-edit-${id}`).style.display = 'none';
+}
+
+async function savePrice(id) {
+  const editEl = document.getElementById(`price-edit-${id}`);
+  if (editEl.style.display === 'none') return; // onblur の二重発火防止
+  const price = parseInt(document.getElementById(`price-input-${id}`).value) || 0;
+
+  // 先にUIを戻す（onblurの二重発火対策）
+  editEl.style.display = 'none';
+  const display = document.getElementById(`price-display-${id}`);
+  display.style.display = '';
+  display.innerHTML = price > 0
+    ? `¥${price.toLocaleString('ja-JP')}`
+    : `<span class="text-muted">¥--</span>`;
+
+  await fetch(`/memo/update-price/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ price }),
+  });
+}
+</script>
+{% endblock %}

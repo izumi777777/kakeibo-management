@@ -1,0 +1,323 @@
+{% extends 'base.html' %}
+{% block title %}AIアドバイス{% endblock %}
+{% block page_title %}🤖 AIアドバイス{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <!-- AI生成パネル -->
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">✨ AIに給料日サイクルを分析してもらう</span>
+      </div>
+      <div class="card-body">
+
+        <!-- 対象サイクル -->
+        <div class="mb-3 p-3 rounded-3" style="background:#f0f4ff;border:1px solid #c7d2fe;">
+          <div class="fw-semibold mb-1" style="font-size:.85rem;color:#4338ca;">
+            📅 分析対象のサイクル
+          </div>
+          <div id="cycle-label" style="font-size:.95rem;font-weight:700;color:#1e293b;">
+            {{ cycle_label }}
+          </div>
+          <input type="hidden" id="selected_cycle_start" value="{{ default_cycle_start }}">
+          <div class="mt-2 d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="shiftCycle(-1)"><i class="bi bi-chevron-left"></i> 前</button>
+            <button type="button" class="btn btn-sm btn-primary"
+                    onclick="shiftCycle(0)">今のサイクル</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="shiftCycle(1)">次 <i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+
+        <!-- アドバイス種類 -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">アドバイスの種類</label>
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="button" class="btn btn-primary btn-sm advice-btn active"
+                    data-type="cycle_review" onclick="selectType(this)">
+              📊 サイクル総評
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm advice-btn"
+                    data-type="saving_tip" onclick="selectType(this)">
+              💡 節約テクニック
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm advice-btn"
+                    data-type="forecast" onclick="selectType(this)">
+              🔮 来月サイクル予測
+            </button>
+          </div>
+          <input type="hidden" id="advice_type" value="cycle_review">
+        </div>
+
+        <button type="button" class="btn btn-primary w-100" id="generateBtn" onclick="generateAdvice()">
+          <span id="btnText"><i class="bi bi-robot me-1"></i>AIに分析してもらう</span>
+          <span id="btnLoading" style="display:none;">
+            <span class="spinner-border spinner-border-sm me-2"></span>分析中（10〜20秒）...
+          </span>
+        </button>
+
+        <!-- 分析結果 -->
+        <div id="adviceResult" class="mt-4" style="display:none;">
+          <hr>
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <div style="width:32px;height:32px;background:#6366f1;border-radius:50%;
+                        display:flex;align-items:center;justify-content:center;font-size:1rem;">🤖</div>
+            <div>
+              <div class="fw-semibold" style="font-size:.9rem;">AIアドバイス</div>
+              <div class="text-muted" style="font-size:.72rem;" id="resultTs"></div>
+            </div>
+          </div>
+          <div class="ai-content p-3 rounded-3"
+               style="background:#f8fafc;border:1px solid #e2e8f0;line-height:1.8;font-size:.9rem;"
+               id="adviceText"></div>
+        </div>
+
+        <!-- ★ チャットエリア（アドバイス生成後に表示） -->
+        <div id="chatArea" class="mt-3" style="display:none;">
+          <hr>
+          <div class="fw-semibold mb-2" style="font-size:.9rem;">
+            <i class="bi bi-chat-dots me-1 text-primary"></i>AIに質問する
+          </div>
+
+          <!-- チャット履歴 -->
+          <div id="chatHistory"
+               style="max-height:320px;overflow-y:auto;background:#f8fafc;
+                      border:1px solid #e2e8f0;border-radius:8px;padding:12px;
+                      display:flex;flex-direction:column;gap:10px;">
+          </div>
+
+          <!-- 質問入力 -->
+          <div class="d-flex gap-2 mt-2">
+            <input type="text" id="chatInput" class="form-control"
+                   placeholder="例：食費をあと5,000円削るには？"
+                   onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendChat(); }">
+            <button class="btn btn-primary flex-shrink-0" onclick="sendChat()" id="chatSendBtn">
+              <i class="bi bi-send"></i>
+            </button>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.72rem;">
+            Enterで送信 ／ 家計データを踏まえて回答します
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 履歴 -->
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">📜 アドバイス履歴</span>
+      </div>
+      <div class="card-body p-2" style="max-height:600px;overflow-y:auto;">
+        {% if advices %}
+          {% for a in advices %}
+          <div class="p-2 mb-2 rounded-2 border" style="font-size:.8rem;cursor:pointer;"
+               onclick="showHistory({{ loop.index0 }})">
+            <div class="d-flex justify-content-between mb-1">
+              <span class="badge" style="background:#6366f1;">
+                {% if a.advice_type == 'cycle_review' %}📊 サイクル総評
+                {% elif a.advice_type == 'saving_tip' %}💡 節約
+                {% elif a.advice_type == 'forecast' %}🔮 予測
+                {% else %}📊 分析{% endif %}
+              </span>
+              <span class="text-muted">{{ a.created_at.strftime('%m/%d %H:%M') }}</span>
+            </div>
+            <div class="text-truncate text-muted">{{ a.advice_text[:60] }}...</div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-clock-history fs-1 d-block mb-2 opacity-25"></i>
+            まだ履歴がありません
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const adviceHistory = [{% for a in advices %}{{ a.advice_text | tojson }},{% endfor %}];
+
+// チャット管理
+let chatMessages = [];       // [{role, content}, ...]
+let currentCycleStart = new Date('{{ default_cycle_start }}');
+
+// ---- サイクル切り替え ----
+function formatCycleLabel(start) {
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+  end.setDate(end.getDate() - 1);
+  return `${start.toISOString().split('T')[0].replace(/-/g,'/')} 〜 ${end.toISOString().split('T')[0].replace(/-/g,'/')}`;
+}
+
+function shiftCycle(dir) {
+  if (dir === 0) {
+    currentCycleStart = new Date('{{ default_cycle_start }}');
+  } else {
+    const d = new Date(currentCycleStart);
+    d.setMonth(d.getMonth() + dir);
+    currentCycleStart = d;
+  }
+  const str = currentCycleStart.toISOString().split('T')[0];
+  document.getElementById('selected_cycle_start').value = str;
+  document.getElementById('cycle-label').textContent = formatCycleLabel(currentCycleStart);
+  // サイクル変更でチャット履歴リセット
+  chatMessages = [];
+  document.getElementById('chatHistory').innerHTML = '';
+}
+
+function selectType(btn) {
+  document.querySelectorAll('.advice-btn').forEach(b => {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-outline-secondary');
+  });
+  btn.classList.remove('btn-outline-secondary');
+  btn.classList.add('btn-primary');
+  document.getElementById('advice_type').value = btn.dataset.type;
+}
+
+// ---- アドバイス生成 ----
+async function generateAdvice() {
+  const cycleStart = document.getElementById('selected_cycle_start').value;
+  const adviceType = document.getElementById('advice_type').value;
+
+  document.getElementById('btnText').style.display    = 'none';
+  document.getElementById('btnLoading').style.display = '';
+  document.getElementById('generateBtn').disabled     = true;
+
+  const form = new FormData();
+  form.append('cycle_start', cycleStart);
+  form.append('advice_type', adviceType);
+
+  try {
+    const res  = await fetch('/ai/generate', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.success) {
+      // アドバイス表示
+      document.getElementById('adviceResult').style.display = '';
+      document.getElementById('adviceText').innerHTML = marked.parse(data.advice);
+      document.getElementById('resultTs').textContent = new Date().toLocaleString('ja-JP');
+
+      // チャットエリアを開く・履歴リセット
+      chatMessages = [];
+      document.getElementById('chatHistory').innerHTML = '';
+      document.getElementById('chatArea').style.display = '';
+
+      // アドバイス内容をチャット文脈として保持（assistantの最初のメッセージ）
+      chatMessages.push({ role: 'assistant', content: data.advice });
+
+      setTimeout(() => location.reload(), 200);
+    } else {
+      alert('エラー: ' + data.message);
+    }
+  } catch(e) {
+    alert('通信エラー: ' + e);
+  } finally {
+    document.getElementById('btnText').style.display    = '';
+    document.getElementById('btnLoading').style.display = 'none';
+    document.getElementById('generateBtn').disabled     = false;
+  }
+}
+
+// ---- チャット送信 ----
+async function sendChat() {
+  const input   = document.getElementById('chatInput');
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = '';
+  appendChatBubble('user', question);
+  chatMessages.push({ role: 'user', content: question });
+
+  const sendBtn = document.getElementById('chatSendBtn');
+  sendBtn.disabled = true;
+  sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  // ローディングバブル
+  const loadingId = 'loading-' + Date.now();
+  appendChatBubble('assistant', '<span class="spinner-border spinner-border-sm text-secondary"></span>', loadingId);
+
+  try {
+    const res  = await fetch('/ai/chat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cycle_start: document.getElementById('selected_cycle_start').value,
+        messages:    chatMessages,
+      }),
+    });
+    const data = await res.json();
+
+    // ローディングを削除して回答を表示
+    document.getElementById(loadingId)?.remove();
+
+    if (data.success) {
+      appendChatBubble('assistant', data.answer);
+      chatMessages.push({ role: 'assistant', content: data.answer });
+    } else {
+      appendChatBubble('assistant', 'エラーが発生しました: ' + data.message);
+    }
+  } catch(e) {
+    document.getElementById(loadingId)?.remove();
+    appendChatBubble('assistant', '通信エラーが発生しました');
+  }
+
+  sendBtn.disabled = false;
+  sendBtn.innerHTML = '<i class="bi bi-send"></i>';
+}
+
+function appendChatBubble(role, content, id) {
+  const history = document.getElementById('chatHistory');
+  const isUser  = role === 'user';
+  const div     = document.createElement('div');
+  if (id) div.id = id;
+  div.style.cssText = `
+    display:flex;
+    justify-content:${isUser ? 'flex-end' : 'flex-start'};
+  `;
+  div.innerHTML = `
+    <div style="
+      max-width:85%;
+      padding:8px 12px;
+      border-radius:${isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};
+      background:${isUser ? '#6366f1' : '#fff'};
+      color:${isUser ? '#fff' : '#1e293b'};
+      border:${isUser ? 'none' : '1px solid #e2e8f0'};
+      font-size:.85rem;
+      line-height:1.6;
+    ">${isUser ? escapeHtml(content) : marked.parse(content)}</div>
+  `;
+  history.appendChild(div);
+  history.scrollTop = history.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---- 履歴表示 ----
+function showHistory(idx) {
+  document.getElementById('adviceResult').style.display = '';
+  document.getElementById('adviceText').innerHTML = marked.parse(adviceHistory[idx]);
+  document.getElementById('resultTs').textContent = '履歴';
+
+  // 履歴表示時もチャットを開く
+  chatMessages = [{ role: 'assistant', content: adviceHistory[idx] }];
+  document.getElementById('chatHistory').innerHTML = '';
+  document.getElementById('chatArea').style.display = '';
+
+  document.getElementById('adviceResult').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+{% endblock %}
