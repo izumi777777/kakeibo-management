@@ -1,63 +1,34 @@
 """
 家計管理アプリ - メインアプリケーション
-Flask + Firestore (ユーザー管理) + SQLite (明細管理)
+Flask + Firestore
 """
 
-from flask import Flask, redirect, url_for, session
-from flask_login import LoginManager, UserMixin
-from models import db  # SQLAlchemy は他テーブル用に残す
-from routes.auth import auth_bp
-from routes.dashboard import dashboard_bp
-from routes.transactions import transactions_bp
-from routes.memo import memo_bp
-from routes.ai_advice import ai_bp
-from routes.cycle import cycle_bp
-from routes.admin import admin_bp
-from routes.ops import ops_bp
 import os
-
-# --- Firestore 初期設定 ---
-from firebase_config import fs_db, FirestoreUser
-from google.cloud import firestore
+from flask import Flask, redirect, url_for
+from flask_login import LoginManager
+from models import db  # SQLAlchemy は models.py の定義用に残す
 from dotenv import load_dotenv
 
-# .env ファイルを読み込む
 load_dotenv()
 
-# インフラエンジニア向け注記: 
-# ローカルでは .env に GOOGLE_APPLICATION_CREDENTIALS="firebase-key.json" を設定してください。
-fs_db = None
-try:
-    # クライアントをグローバルに初期化（他モジュールから import fs_db で利用可能にする）
-    fs_db = firestore.Client()
-except Exception as e:
-    print(f"Firestore Client Error: {e}")
+# Firestore クライアントと FirestoreUser を firebase_config から取得
+from firebase_config import fs_db, FirestoreUser
 
-# --- Flask-Login 用のユーザーモデルクラス ---
-# 他のファイル（auth.pyなど）でも使うため、ここに定義しておきます
-# class FirestoreUser(UserMixin):
-#     def __init__(self, user_data):
-#         self.id = user_data.get('username')
-#         self.username = user_data.get('username')
-#         self.display_name = user_data.get('display_name')
-#         self.email = user_data.get('email')
-#         self.password_hash = user_data.get('password_hash')
-#         self.family_id = user_data.get('family_id')
 
 def create_app():
     app = Flask(__name__)
-    
+
     # --- 設定 ---
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
         'DATABASE_URL', 'sqlite:///kakeibo.db'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['ANTHROPIC_API_KEY'] = os.environ.get('ANTHROPIC_API_KEY', '')
 
-    # --- 拡張機能の初期化 ---
+    # --- SQLAlchemy 初期化（models.py のテーブル定義用） ---
     db.init_app(app)
 
+    # --- Flask-Login 設定 ---
     login_manager = LoginManager()
     login_manager.init_app(app)
     login_manager.login_view = 'auth.login'
@@ -65,19 +36,47 @@ def create_app():
     login_manager.login_message_category = 'warning'
 
     @login_manager.user_loader
-    def load_user(user_id):
-        """Firestore からユーザーを読み込む"""
+    def load_user(user_id: str):
+        """
+        セッションに保存された user_id（= Firestore ドキュメントID）で
+        ユーザーを復元する。
+
+        ① ドキュメントIDで直接 get()
+        ② 見つからなければ username フィールドで検索（旧データ互換）
+        """
         if not fs_db:
             return None
         try:
+            # ① ドキュメントIDで直接取得（admin.py で追加した新ユーザー向け）
             doc = fs_db.collection('users').document(user_id).get()
             if doc.exists:
-                return FirestoreUser(doc.to_dict())
+                d       = doc.to_dict()
+                d['id'] = doc.id
+                return FirestoreUser(d)
+
+            # ② username フィールドで検索（seed でドキュメントIDがusernameでない場合）
+            docs = fs_db.collection('users') \
+                        .where('username', '==', user_id) \
+                        .limit(1).get()
+            if docs:
+                d       = docs[0].to_dict()
+                d['id'] = docs[0].id
+                return FirestoreUser(d)
+
         except Exception as e:
-            print(f"Error loading user from Firestore: {e}")
+            print(f"user_loader error: {e}")
         return None
 
     # --- Blueprint 登録 ---
+    from routes.auth         import auth_bp
+    from routes.dashboard    import dashboard_bp
+    from routes.transactions import transactions_bp
+    from routes.memo         import memo_bp
+    from routes.ai_advice    import ai_bp
+    from routes.cycle        import cycle_bp
+    from routes.admin        import admin_bp
+    from routes.ops          import ops_bp
+
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(transactions_bp)
@@ -87,57 +86,52 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(ops_bp)
 
-    # --- DB/Firestore 初期化 ---
+    # --- DB 初期化 ---
     with app.app_context():
-        # SQLite のテーブル作成（明細用などは SQLite を維持）
         db.create_all()
-        # Firestore へのデモデータ投入
         _seed_demo_users()
 
     return app
 
+
 def _seed_demo_users():
-    """Firestore にデモユーザーを作成"""
+    """Firestore にデモユーザーを作成（初回のみ）"""
     if not fs_db:
         print("Firestore not initialized, skipping seed.")
         return
 
     from werkzeug.security import generate_password_hash
+    from google.cloud import firestore as _fs
 
     try:
-        # 1. 家族グループの作成
+        # 家族グループ
         family_ref = fs_db.collection('families').document('tanaka_family')
         if not family_ref.get().exists:
-            family_ref.set({
-                'name': '田中家',
-                'created_at': firestore.SERVER_TIMESTAMP
-            })
-            print("Firestore: Family created.")
+            family_ref.set({'name': '田中家', 'created_at': _fs.SERVER_TIMESTAMP})
 
-        # 2. デモユーザーの定義
+        # デモユーザー（ドキュメントID = username にして旧 user_loader と互換性を保つ）
         demo_users = [
-            {"username": "taro", "display_name": "太郎（夫）", "email": "taro@example.com", "password": "demo1234"},
-            {"username": "hanako", "display_name": "花子（妻）", "email": "hanako@example.com", "password": "demo1234"},
+            {'username': 'taro',   'display_name': '太郎（夫）', 'email': 'taro@example.com',   'password': 'demo1234'},
+            {'username': 'hanako', 'display_name': '花子（妻）', 'email': 'hanako@example.com', 'password': 'demo1234'},
         ]
-
         for u in demo_users:
-            user_ref = fs_db.collection('users').document(u["username"])
-            if not user_ref.get().exists:
-                user_ref.set({
-                    "username": u["username"],
-                    "display_name": u["display_name"],
-                    "email": u["email"],
-                    "password_hash": generate_password_hash(u["password"]),
-                    "family_id": 'tanaka_family'
+            # ドキュメントID = username で保存
+            ref = fs_db.collection('users').document(u['username'])
+            if not ref.get().exists:
+                ref.set({
+                    'username':      u['username'],
+                    'display_name':  u['display_name'],
+                    'email':         u['email'],
+                    'password_hash': generate_password_hash(u['password']),
+                    'family_id':     'tanaka_family',
+                    # ★ id フィールドも明示的に保存しておく
+                    'id':            u['username'],
                 })
-                print(f"Firestore: User {u['username']} seeded.")
-        
         print("Firestore demo seeding completed.")
-
     except Exception as e:
         print(f"Firestore seeding error: {e}")
 
-# グローバルなアプリインスタンスの作成
+
 app = create_app()
 
 if __name__ == '__main__':
