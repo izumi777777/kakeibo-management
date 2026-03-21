@@ -59,7 +59,8 @@ def create_app():
         inspector = inspect(db.engine)
         if not inspector.has_table("families"):
             # db.create_all()
-        _seed_demo_users()
+            pass
+            _seed_demo_users()
 
     return app
 
