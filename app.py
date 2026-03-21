@@ -58,7 +58,7 @@ def create_app():
         from sqlalchemy import inspect
         inspector = inspect(db.engine)
         if not inspector.has_table("families"):
-            db.create_all()
+            # db.create_all()
         _seed_demo_users()
 
     return app
