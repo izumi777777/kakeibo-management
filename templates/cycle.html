@@ -162,7 +162,7 @@
             <div class="d-flex align-items-center gap-2">
               <input type="checkbox" class="form-check-input flex-shrink-0"
                      {% if pe.is_done %}checked{% endif %}
-                     onchange="togglePlanned({{ pe.id }}, this)"
+                     onchange="togglePlanned('{{ pe.id }}', this)"
                      style="width:1.1rem;height:1.1rem;cursor:pointer;">
               <div class="flex-grow-1 min-w-0">
                 <div class="d-flex align-items-center gap-1 flex-wrap">
@@ -188,11 +188,11 @@
                 </div>
                 <div class="d-flex gap-1 justify-content-end mt-1">
                   <button class="btn btn-link btn-sm p-0 text-primary" style="font-size:.72rem;"
-                          onclick="openEditPlanned({{ pe.id }})">
+                          onclick="openEditPlanned('{{ pe.id }}')">
                     <i class="bi bi-pencil"></i> 編集
                   </button>
                   <button class="btn btn-link btn-sm p-0 text-danger" style="font-size:.72rem;"
-                          onclick="deletePlanned({{ pe.id }})">
+                          onclick="deletePlanned('{{ pe.id }}')">
                     <i class="bi bi-trash3"></i>
                   </button>
                 </div>
@@ -217,7 +217,7 @@
                 <div class="col-12">
                   <select class="form-select form-select-sm" id="ef-type-{{ pe.id }}">
                     {% for k,v in type_labels.items() %}
-                    {% if k != 'income' %}
+                    {% if k not in ['income', 'carryover'] %}
                     <option value="{{ k }}" {% if pe.transaction_type == k %}selected{% endif %}>{{ v }}</option>
                     {% endif %}
                     {% endfor %}
@@ -228,10 +228,10 @@
                     <input type="checkbox" id="ef-recur-{{ pe.id }}"
                            {% if pe.is_recurring %}checked{% endif %}> 毎月繰り返す
                   </label>
-                  <button class="btn btn-sm btn-light py-0" onclick="closeEditPlanned({{ pe.id }})">
+                  <button class="btn btn-sm btn-light py-0" onclick="closeEditPlanned('{{ pe.id }}')">
                     キャンセル
                   </button>
-                  <button class="btn btn-sm btn-primary py-0" onclick="saveEditPlanned({{ pe.id }})">
+                  <button class="btn btn-sm btn-primary py-0" onclick="saveEditPlanned('{{ pe.id }}')">
                     保存
                   </button>
                 </div>
@@ -254,6 +254,37 @@
             「追加」から予定支出を入力してください<br>
             <small class="text-muted">家賃・光熱費・保険など</small>
           </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ★ 繰り越しカード -->
+    <div class="card mt-3">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">💰 残高を次のサイクルへ繰り越す</span>
+      </div>
+      <div class="card-body">
+        {% set carryover_amount = s.actual_income - s.actual_expense %}
+        {% if carryover_amount > 0 %}
+        <p class="text-muted mb-2" style="font-size:.82rem;">
+          確定残高（収入－支出）の
+          <strong class="text-success">¥{{ '{:,}'.format(carryover_amount) }}</strong>
+          を次のサイクルの収入として登録します。<br>
+          <span style="font-size:.75rem;">※ 未払いの予定支出は含みません。</span>
+        </p>
+        <form action="{{ url_for('cycle.carryover') }}" method="POST"
+              onsubmit="return confirm('¥{{ '{:,}'.format(carryover_amount) }} を次のサイクルに繰り越しますか？');">
+          <input type="hidden" name="cycle_start" value="{{ s.cycle_start.strftime('%Y-%m-%d') }}">
+          <button type="submit" class="btn btn-outline-success w-100 btn-sm">
+            <i class="bi bi-arrow-right-circle me-1"></i>
+            ¥{{ '{:,}'.format(carryover_amount) }} を繰り越す
+          </button>
+        </form>
+        {% else %}
+        <p class="text-muted mb-0" style="font-size:.82rem;">
+          繰り越せる残高がありません（確定残高:
+          <span class="text-danger">¥{{ '{:,}'.format(carryover_amount) }}</span>）。
+        </p>
         {% endif %}
       </div>
     </div>
@@ -514,19 +545,24 @@ function closeEditPlanned(id) {
 
 // 編集保存
 async function saveEditPlanned(id) {
-  const desc   = document.getElementById(`ef-desc-${id}`).value.trim();
-  const amt    = document.getElementById(`ef-amt-${id}`).value;
-  const date   = document.getElementById(`ef-date-${id}`).value;
-  const type   = document.getElementById(`ef-type-${id}`).value;
-  const recur  = document.getElementById(`ef-recur-${id}`).checked;
+  const desc  = document.getElementById(`ef-desc-${id}`).value.trim();
+  const amt   = document.getElementById(`ef-amt-${id}`).value;
+  const dt    = document.getElementById(`ef-date-${id}`).value;
+  const type  = document.getElementById(`ef-type-${id}`).value;
+  const recur = document.getElementById(`ef-recur-${id}`).checked;
 
   if (!desc || !amt) { alert('名前と金額を入力してください。'); return; }
 
   const res = await fetch(`/cycle/planned/edit/${id}`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ description:desc, amount:parseInt(amt),
-                           transaction_type:type, planned_date:date, is_recurring:recur })
+    method:  'POST',
+    headers: {'Content-Type': 'application/json'},
+    body:    JSON.stringify({
+      description:      desc,
+      amount:           parseInt(amt),
+      transaction_type: type,
+      planned_date:     dt,
+      is_recurring:     recur,
+    }),
   });
   const data = await res.json();
   if (data.success) {

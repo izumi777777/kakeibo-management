@@ -39,6 +39,7 @@ class User(UserMixin, db.Model):
 
 TRANSACTION_TYPE_LABELS = {
     'income':        '収入',
+    'carryover':     '繰り越し', 
     'fixed':         '固定費',
     'food':          '食費',
     'daily':         '日用品',
@@ -50,6 +51,7 @@ TRANSACTION_TYPE_LABELS = {
 
 TRANSACTION_TYPE_COLORS = {
     'income':        '#10b981',
+    'carryover':     '#06b6d4',
     'fixed':         '#6366f1',
     'food':          '#f59e0b',
     'daily':         '#3b82f6',

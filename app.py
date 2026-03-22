@@ -88,7 +88,10 @@ def create_app():
 
     # --- DB 初期化 ---
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"[db] create_all skipped (already exists): {e}")
         _seed_demo_users()
 
     return app

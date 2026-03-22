@@ -398,3 +398,68 @@ def save_budget():
 
     flash('予算を保存しました。', 'success')
     return redirect(url_for('cycle.index', cycle_start=cycle_start_str))
+
+
+@cycle_bp.route('/carryover', methods=['POST'])
+@login_required
+def carryover():
+    """
+    現在のサイクルの残高を次のサイクルに「繰り越し収入」として登録する。
+    - 繰り越し額 = 確定収入 - 確定支出 - 支払済み予定支出
+    - 次サイクルの transaction_date = 次の給料日（cycle_start）
+    - 二重登録を防ぐため、同一サイクルへの繰り越しが既存でないか確認する
+    """
+    cycle_start_str = request.form.get('cycle_start')
+    try:
+        cycle_start = datetime.strptime(cycle_start_str, '%Y-%m-%d').date()
+    except Exception:
+        flash('サイクル日付が不正です。', 'danger')
+        return redirect(url_for('cycle.index'))
+
+    summary = get_cycle_summary(current_user.family_id, cycle_start)
+
+    # 繰り越し額 = 収入 - 支出（確定のみ、予定未払い分は含まない）
+    carryover_amount = summary['actual_income'] - summary['actual_expense']
+
+    if carryover_amount <= 0:
+        flash(f'繰り越せる残高がありません（確定残高: ¥{carryover_amount:,}）。', 'warning')
+        return redirect(url_for('cycle.index', cycle_start=cycle_start_str))
+
+    # 次サイクルの開始日
+    next_cycle_start = get_cycle_end(cycle_start) + timedelta(days=1)
+    next_cycle_start_iso = next_cycle_start.isoformat()
+
+    f_id = current_user.family_id
+    try:
+        f_id = int(f_id)
+    except Exception:
+        pass
+
+    # 二重登録チェック
+    existing = fs_db.collection('transactions') \
+                    .where('family_id', '==', f_id) \
+                    .where('transaction_type', '==', 'carryover') \
+                    .where('transaction_date', '==', next_cycle_start_iso) \
+                    .limit(1).get()
+
+    if existing:
+        flash('このサイクルの繰り越しはすでに登録されています。', 'warning')
+        return redirect(url_for('cycle.index', cycle_start=cycle_start_str))
+
+    # 次サイクルに繰り越し収入として登録
+    fs_db.collection('transactions').add({
+        'family_id':        f_id,
+        'user_id':          current_user.id,
+        'amount':           carryover_amount,
+        'transaction_type': 'carryover',
+        'is_income':        True,
+        'description':      f'前サイクル繰り越し（{cycle_start.strftime("%Y/%m/%d")}〜）',
+        'transaction_date': next_cycle_start_iso,
+        'created_at':       datetime.now(),
+    })
+
+    flash(
+        f'✅ ¥{carryover_amount:,} を次のサイクル（{next_cycle_start.strftime("%Y/%m/%d")}〜）に繰り越しました。',
+        'success'
+    )
+    return redirect(url_for('cycle.index', cycle_start=next_cycle_start_iso))
