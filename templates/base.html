@@ -164,6 +164,9 @@
     <a href="{{ url_for('memo.index') }}" class="nav-link-item {% if request.blueprint == 'memo' %}active{% endif %}">
       <i class="bi bi-journal-text"></i> メモ・買い物リスト
     </a>
+    <a href="{{ url_for('export.index') }}" class="nav-link-item {% if request.blueprint == 'export' %}active{% endif %}">
+      <i class="bi bi-download"></i> データエクスポート
+    </a>
     <a href="{{ url_for('ops.index') }}" class="nav-link-item {% if request.blueprint == 'ops' %}active{% endif %}">
       <i class="bi bi-book-fill"></i> 運用手順メモ
     </a>

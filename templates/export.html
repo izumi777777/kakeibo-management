@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+{% block title %}データエクスポート{% endblock %}
+{% block page_title %}📊 データエクスポート{% endblock %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+
+    <!-- 説明 -->
+    <div class="alert alert-info d-flex gap-2 align-items-start mb-4">
+      <i class="bi bi-info-circle-fill fs-5 flex-shrink-0 mt-1"></i>
+      <div style="font-size:.88rem;">
+        Firestore のデータを CSV 形式でダウンロードできます。<br>
+        Databricks・Excel・Google スプレッドシートなどで分析にご利用ください。<br>
+        文字コードは <strong>UTF-8（BOM付き）</strong> のため Excel でも文字化けしません。
+      </div>
+    </div>
+
+    <!-- 期間設定 -->
+    <div class="card mb-4">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">📅 出力期間の設定</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-sm-5">
+            <label class="form-label fw-semibold">開始日</label>
+            <input type="date" id="dateFrom" class="form-control"
+                   value="{{ date_from }}" max="{{ today }}">
+          </div>
+          <div class="col-sm-5">
+            <label class="form-label fw-semibold">終了日</label>
+            <input type="date" id="dateTo" class="form-control"
+                   value="{{ date_to }}" max="{{ today }}">
+          </div>
+          <div class="col-sm-2">
+            <button class="btn btn-outline-secondary w-100" onclick="setThisMonth()">
+              今月
+            </button>
+          </div>
+        </div>
+        <div class="d-flex gap-2 mt-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" onclick="setRange(3)">過去3ヶ月</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="setRange(6)">過去6ヶ月</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="setRange(12)">過去1年</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="setAll()">全期間</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 個別ダウンロード -->
+    <div class="card mb-4">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">📥 個別ダウンロード</span>
+      </div>
+      <div class="card-body p-0">
+
+        <div class="list-group list-group-flush">
+
+          <!-- 取引データ -->
+          <div class="list-group-item px-3 py-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold">💰 収支データ（transactions）</div>
+                <div class="text-muted" style="font-size:.78rem;">
+                  収入・支出の全取引。transaction_date / transaction_type / amount / description
+                </div>
+              </div>
+              <button class="btn btn-sm btn-primary flex-shrink-0 ms-3"
+                      onclick="download('transactions')">
+                <i class="bi bi-download me-1"></i>CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- 予定支出 -->
+          <div class="list-group-item px-3 py-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold">📋 予定支出（planned_expenses）</div>
+                <div class="text-muted" style="font-size:.78rem;">
+                  給料日サイクルの予定支出。cycle_start / amount / is_done / is_recurring
+                </div>
+              </div>
+              <button class="btn btn-sm btn-primary flex-shrink-0 ms-3"
+                      onclick="download('planned_expenses')">
+                <i class="bi bi-download me-1"></i>CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- メモ -->
+          <div class="list-group-item px-3 py-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold">📝 メモ・買い物リスト（memos）</div>
+                <div class="text-muted" style="font-size:.78rem;">
+                  買い物メモ・共有メモ。memo_type / item_category / content / price / is_done
+                </div>
+              </div>
+              <button class="btn btn-sm btn-primary flex-shrink-0 ms-3"
+                      onclick="download('memos')">
+                <i class="bi bi-download me-1"></i>CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- AIアドバイス -->
+          <div class="list-group-item px-3 py-3">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="fw-semibold">🤖 AIアドバイス（ai_advices）</div>
+                <div class="text-muted" style="font-size:.78rem;">
+                  生成済みのAIアドバイス全件。advice_type / advice_text / created_at
+                </div>
+              </div>
+              <button class="btn btn-sm btn-primary flex-shrink-0 ms-3"
+                      onclick="download('ai_advices')">
+                <i class="bi bi-download me-1"></i>CSV
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- 一括ダウンロード -->
+    <div class="card" style="background:linear-gradient(135deg,#1e1b4b,#4338ca);color:#fff;">
+      <div class="card-body py-3">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="fw-bold fs-6">📦 全データを一括ダウンロード（ZIP）</div>
+            <div style="font-size:.78rem;opacity:.8;margin-top:.2rem;">
+              上記すべての CSV をまとめた ZIP ファイルをダウンロードします
+            </div>
+          </div>
+          <button class="btn btn-light fw-semibold flex-shrink-0 ms-3"
+                  onclick="download('all', 'zip')">
+            <i class="bi bi-file-zip me-1"></i>ZIP
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Databricks 活用ヒント -->
+    <div class="card mt-4">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">💡 Databricks での活用例</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-2" style="font-size:.85rem;">
+          ダウンロードした CSV を Databricks にアップロードして分析できます。
+        </p>
+        <pre class="bg-light p-3 rounded" style="font-size:.78rem;"><code># Databricks Notebook サンプル
+df = spark.read.csv(
+    "/FileStore/kakeibo/transactions_*.csv",
+    header=True,
+    inferSchema=True,
+    encoding="UTF-8"
+)
+
+# 月別支出集計
+from pyspark.sql.functions import month, year, sum as _sum
+df.filter(df.is_income == "FALSE") \
+  .groupBy(year("transaction_date"), month("transaction_date"), "transaction_type") \
+  .agg(_sum("amount").alias("total")) \
+  .orderBy("year(transaction_date)", "month(transaction_date)") \
+  .show()</code></pre>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getParams() {
+  return `date_from=${document.getElementById('dateFrom').value}&date_to=${document.getElementById('dateTo').value}`;
+}
+
+function download(type, ext = 'csv') {
+  const params = getParams();
+  if (ext === 'zip') {
+    window.location.href = `/export/all.zip?${params}`;
+  } else {
+    window.location.href = `/export/${type}.csv?${params}`;
+  }
+}
+
+function setThisMonth() {
+  const now   = new Date();
+  const from  = new Date(now.getFullYear(), now.getMonth(), 1);
+  document.getElementById('dateFrom').value = from.toISOString().split('T')[0];
+  document.getElementById('dateTo').value   = now.toISOString().split('T')[0];
+}
+
+function setRange(months) {
+  const now  = new Date();
+  const from = new Date(now);
+  from.setMonth(from.getMonth() - months);
+  document.getElementById('dateFrom').value = from.toISOString().split('T')[0];
+  document.getElementById('dateTo').value   = now.toISOString().split('T')[0];
+}
+
+function setAll() {
+  document.getElementById('dateFrom').value = '2000-01-01';
+  document.getElementById('dateTo').value   = new Date().toISOString().split('T')[0];
+}
+</script>
+{% endblock %}
