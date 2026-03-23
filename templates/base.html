@@ -158,6 +158,9 @@
     <a href="{{ url_for('ai.index') }}" class="nav-link-item {% if request.blueprint == 'ai' %}active{% endif %}">
       <i class="bi bi-robot"></i> AIアドバイス
     </a>
+    <a href="{{ url_for('receipts.index') }}" class="nav-link-item {% if request.blueprint == 'receipts' %}active{% endif %}">
+      <i class="bi bi-receipt"></i> レシート管理
+    </a>
     <a href="{{ url_for('memo.index') }}" class="nav-link-item {% if request.blueprint == 'memo' %}active{% endif %}">
       <i class="bi bi-journal-text"></i> メモ・買い物リスト
     </a>

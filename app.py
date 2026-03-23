@@ -4,10 +4,12 @@ Flask + Firestore
 """
 
 import os
+import boto3
 from flask import Flask, redirect, url_for
 from flask_login import LoginManager
 from models import db  # SQLAlchemy は models.py の定義用に残す
 from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -76,6 +78,7 @@ def create_app():
     from routes.cycle        import cycle_bp
     from routes.admin        import admin_bp
     from routes.ops          import ops_bp
+    from routes.receipts     import receipts_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -85,6 +88,7 @@ def create_app():
     app.register_blueprint(cycle_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(ops_bp)
+    app.register_blueprint(receipts_bp)
 
     # --- DB 初期化 ---
     with app.app_context():
