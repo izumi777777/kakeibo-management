@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+{% block title %}レシート管理{% endblock %}
+{% block page_title %}🧾 レシート管理{% endblock %}
+
+{% block head %}
+<style>
+.receipt-card {
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow .15s;
+  overflow: hidden;
+}
+.receipt-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+.receipt-thumb {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.receipt-thumb img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+}
+.receipt-thumb .pdf-icon {
+  font-size: 3rem;
+  color: #94a3b8;
+}
+.upload-zone {
+  border: 2px dashed #c7d2fe;
+  border-radius: 12px;
+  background: #f8f7ff;
+  transition: border-color .2s;
+}
+.upload-zone:hover { border-color: #6366f1; }
+/* モーダル内画像 */
+#previewImg { max-width: 100%; max-height: 70vh; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% if not s3_configured %}
+<div class="alert alert-warning">
+  ⚠️ S3バケットが設定されていません。
+  <code>.env</code> に <code>S3_RECEIPT_BUCKET=バケット名</code> を追加してください。
+</div>
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- アップロードエリア -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header py-2 px-3">
+        <span class="fw-semibold">📤 レシートをアップロード</span>
+      </div>
+      <div class="card-body">
+        <form action="{{ url_for('receipts.upload') }}" method="POST"
+              enctype="multipart/form-data" id="uploadForm">
+
+          <!-- ドロップゾーン -->
+          <div class="upload-zone p-4 text-center mb-3" id="dropZone"
+               onclick="document.getElementById('fileInput').click()">
+            <i class="bi bi-cloud-upload fs-1 text-primary d-block mb-2"></i>
+            <div class="fw-semibold" style="font-size:.9rem;">
+              クリックまたはドラッグ＆ドロップ
+            </div>
+            <div class="text-muted" style="font-size:.75rem;">
+              JPG / PNG / PDF（最大10MB）
+            </div>
+            <div id="fileName" class="mt-2 text-primary" style="font-size:.8rem;"></div>
+          </div>
+          <input type="file" id="fileInput" name="receipt_file"
+                 accept=".jpg,.jpeg,.png,.gif,.pdf" style="display:none;"
+                 onchange="onFileSelect(this)">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">購入日</label>
+            <input type="date" name="receipt_date" class="form-control"
+                   id="receiptDate">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">金額（円）</label>
+            <div class="input-group">
+              <span class="input-group-text">¥</span>
+              <input type="number" name="amount" class="form-control"
+                     placeholder="0" min="0">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">カテゴリ</label>
+            <select name="category" class="form-select">
+              {% for val, label in categories.items() %}
+              <option value="{{ val }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">メモ（任意）</label>
+            <input type="text" name="memo" class="form-control"
+                   placeholder="例：スーパーの領収書">
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100"
+                  id="uploadBtn" {% if not s3_configured %}disabled{% endif %}>
+            <i class="bi bi-upload me-1"></i> アップロード
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- レシート一覧 -->
+  <div class="col-lg-8">
+
+    <!-- カテゴリフィルター -->
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <a href="{{ url_for('receipts.index') }}"
+         class="btn btn-sm {% if selected_cat == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        すべて
+      </a>
+      {% for val, label in categories.items() %}
+      <a href="{{ url_for('receipts.index', category=val) }}"
+         class="btn btn-sm {% if selected_cat == val %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </div>
+
+    {% if receipts %}
+    <div class="row g-3">
+      {% for r in receipts %}
+      <div class="col-sm-6 col-md-4">
+        <div class="receipt-card bg-white">
+
+          <!-- サムネイル -->
+          <div class="receipt-thumb"
+               onclick="openPreview('{{ r.id }}', '{{ r.ext }}', '{{ r.url }}', '{{ r.memo or '' }}')">
+            {% if r.ext == 'pdf' %}
+              <div class="pdf-icon text-center py-4">
+                <i class="bi bi-file-earmark-pdf text-danger" style="font-size:3rem;"></i>
+                <div class="text-muted mt-1" style="font-size:.75rem;">PDF</div>
+              </div>
+            {% elif r.url %}
+              <img src="{{ r.url }}" alt="{{ r.memo or 'レシート' }}"
+                   onerror="this.src=''; this.parentElement.innerHTML='<div class=\'text-center p-3 text-muted\'><i class=\'bi bi-image\'></i><br>表示できません</div>'">
+            {% else %}
+              <div class="text-center p-4 text-muted">
+                <i class="bi bi-image fs-2"></i><br>
+                <small>URLの期限切れ</small>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- メタ情報 -->
+          <div class="p-2">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <span class="badge rounded-pill" style="background:#6366f1;font-size:.68rem;">
+                {{ categories.get(r.category, r.category) }}
+              </span>
+              <button class="btn btn-link btn-sm p-0 text-danger"
+                      onclick="deleteReceipt('{{ r.id }}')" style="font-size:.75rem;">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </div>
+            {% if r.amount %}
+            <div class="fw-bold text-danger" style="font-size:.9rem;">
+              ¥{{ '{:,}'.format(r.amount) }}
+            </div>
+            {% endif %}
+            <div class="text-muted" style="font-size:.75rem;">
+              {{ r.receipt_date or '' }}
+            </div>
+            {% if r.memo %}
+            <div class="text-truncate" style="font-size:.78rem;">{{ r.memo }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    <div class="card">
+      <div class="card-body text-center py-5 text-muted">
+        <i class="bi bi-receipt fs-1 d-block mb-2 opacity-25"></i>
+        レシートがありません。左のフォームからアップロードしてください。
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- プレビューモーダル -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content" style="border-radius:16px;">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold" id="previewTitle">レシート</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center p-2">
+        <img id="previewImg" src="" alt="" style="display:none;">
+        <div id="previewPdf" style="display:none;">
+          <a id="previewPdfLink" href="" target="_blank" class="btn btn-outline-danger">
+            <i class="bi bi-file-earmark-pdf me-1"></i> PDF を別タブで開く
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 今日の日付をセット
+document.getElementById('receiptDate').value = new Date().toISOString().split('T')[0];
+
+// ファイル選択
+function onFileSelect(input) {
+  const name = input.files[0]?.name || '';
+  document.getElementById('fileName').textContent = name ? `📎 ${name}` : '';
+}
+
+// ドラッグ＆ドロップ
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#6366f1'; });
+dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = '#c7d2fe'; });
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.style.borderColor = '#c7d2fe';
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    const input = document.getElementById('fileInput');
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    document.getElementById('fileName').textContent = `📎 ${file.name}`;
+  }
+});
+
+// プレビューモーダル
+function openPreview(id, ext, url, memo) {
+  document.getElementById('previewTitle').textContent = memo || 'レシート';
+  const img  = document.getElementById('previewImg');
+  const pdf  = document.getElementById('previewPdf');
+  const link = document.getElementById('previewPdfLink');
+
+  if (ext === 'pdf') {
+    img.style.display  = 'none';
+    pdf.style.display  = '';
+    link.href = url;
+  } else {
+    pdf.style.display  = 'none';
+    img.style.display  = '';
+    img.src = url || '';
+  }
+
+  // URL が空の場合は再取得
+  if (!url && ext !== 'pdf') {
+    fetch(`/receipts/presign/${id}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) img.src = d.url; });
+  }
+
+  new bootstrap.Modal(document.getElementById('previewModal')).show();
+}
+
+// 削除
+async function deleteReceipt(id) {
+  if (!confirm('このレシートを削除しますか？')) return;
+  const res  = await fetch(`/receipts/delete/${id}`, { method: 'POST' });
+  const data = await res.json();
+  if (data.success) {
+    location.reload();
+  } else {
+    alert('削除に失敗しました: ' + data.message);
+  }
+}
+</script>
+{% endblock %}
