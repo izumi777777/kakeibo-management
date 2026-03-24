@@ -278,7 +278,7 @@ function onCheckChange(cb) {
   setSelected(cb.closest('.food-item'), cb.checked);
 }
 
-// ★ 単価変更
+// 単価変更
 function onPriceInput(input) {
   const el  = input.closest('.food-item');
   const id  = parseInt(el.dataset.id);
@@ -475,15 +475,23 @@ async function addToMemo() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>追加中...';
 
+  // ★修正箇所: URLから現在の週（?week=X）を取得し、無ければ1をセット
+  const urlParams = new URLSearchParams(window.location.search);
+  const currentWeek = parseInt(urlParams.get('week')) || 1;
+
   try {
     const res  = await fetch('/memo/shopping-plan/add-to-memo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ selected_items: buildPayload() }),
+      body: JSON.stringify({ 
+        selected_items: buildPayload(),
+        week: currentWeek // ★修正箇所: weekパラメータを送信データに追加
+      }),
     });
     const data = await res.json();
     if (data.success) {
       alert(`✅ ${data.added}件を買い物メモに追加しました`);
-      window.location.href = "{{ url_for('memo.index') }}";
+      // ★修正箇所: 追加後、元の週のタブに戻るようにリダイレクト先を変更
+      window.location.href = "{{ url_for('memo.index') }}?week=" + currentWeek;
     }
   } catch(e) {
     alert('エラーが発生しました');
