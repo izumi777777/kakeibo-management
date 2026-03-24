@@ -110,6 +110,18 @@ def _get_food_budget_status(family_id) -> dict:
     }
 
 
+@memo_bp.route('/delete-bulk', methods=['POST'])
+@login_required
+def delete_bulk():
+    """チェック済みのメモを一括削除するルート"""
+    data = request.get_json()
+    memo_ids = data.get('memo_ids', [])
+    
+    for m_id in memo_ids:
+        fs_db.collection('memos').document(str(m_id)).delete()
+        
+    return jsonify({'success': True})
+
 # ------------------------------------------------------------------ #
 # メインルート
 # ------------------------------------------------------------------ #

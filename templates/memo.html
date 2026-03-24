@@ -7,7 +7,8 @@
 {# ---- アイテム行マクロ（block内の先頭で定義） ---- #}
 {% macro render_item(item) %}
 <div class="d-flex align-items-center gap-2 py-1 border-bottom" id="item-{{ item.id }}">
-  <input type="checkbox" class="form-check-input flex-shrink-0"
+  <input type="checkbox" class="form-check-input flex-shrink-0 memo-cb"
+         value="{{ item.id }}"
          {% if item.is_done %}checked{% endif %}
          onchange="toggleMemo({{ item.id }}, this)"
          style="width:1.1rem;height:1.1rem;cursor:pointer;">
@@ -91,9 +92,14 @@
           <span class="fw-semibold">🛒 買い物リスト</span>
           <span class="badge bg-secondary ms-2">{{ shopping_all | rejectattr('is_done') | list | length }}件未購入</span>
         </div>
-        <a href="{{ url_for('memo.shopping_plan', week=selected_week) }}" class="btn btn-sm btn-outline-success">
-          <i class="bi bi-basket2"></i> 食品リストから追加
-        </a>
+        <div>
+          <button onclick="deleteCheckedMemos()" class="btn btn-sm btn-outline-danger me-2">
+            <i class="bi bi-trash3"></i> チェック済みを削除
+          </button>
+          <a href="{{ url_for('memo.shopping_plan', week=selected_week) }}" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-basket2"></i> 食品リストから追加
+          </a>
+        </div>
       </div>
       <div class="card-body p-3">
 
@@ -235,6 +241,32 @@ async function deleteMemo(id) {
     const el = document.getElementById(`item-${id}`);
     if (el) el.remove();
     else location.reload();
+  }
+}
+
+// ★修正箇所: 一括削除処理の追加
+async function deleteCheckedMemos() {
+  const checkedBoxes = document.querySelectorAll('.memo-cb:checked');
+  const ids = Array.from(checkedBoxes).map(cb => cb.value);
+  
+  if (ids.length === 0) {
+    alert('削除する項目がチェックされていません。');
+    return;
+  }
+  
+  if (!confirm(`${ids.length}件のチェック済み項目をまとめて削除しますか？`)) return;
+  
+  const res = await fetch('/memo/delete-bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ memo_ids: ids })
+  });
+  
+  const data = await res.json();
+  if (data.success) {
+    location.reload(); 
+  } else {
+    alert('削除に失敗しました。');
   }
 }
 
