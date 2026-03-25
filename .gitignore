@@ -20,5 +20,7 @@ venv/
 移行元DB/
 
 # インフラ要素
-Azure_Bicep/modules
+# このリポジトリではインフラコードを管理しない方針のため、丸ごと除外します。
+Azure_Bicep/
+pb-watcher-infra/
 .cursorrules
