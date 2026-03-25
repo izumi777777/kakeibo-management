@@ -18,3 +18,7 @@ __pycache__/
 firebase-key.json
 venv/
 移行元DB/
+
+# インフラ要素
+Azure_Bicep/modules
+.cursorrules
